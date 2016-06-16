@@ -132,7 +132,7 @@ int gridnet(char *pfile, char *plenfile, char *tlenfile, char *gordfile, char *m
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
         flowData->savedxdyc(p);
-        p.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        p.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
         //printf("Pfile read");  fflush(stdout);
 
         //if using Mask, create partion and read it
@@ -145,7 +145,7 @@ int gridnet(char *pfile, char *plenfile, char *tlenfile, char *gordfile, char *m
                 return 1;
             }
             maskData = CreateNewPartition(mask.getDatatype(), totalX, totalY, dxA, dyA, mask.getNodata());
-            mask.read(xstart, ystart, maskData->getny(), maskData->getnx(), maskData->getGridPointer());
+            mask.read(xstart, ystart, maskData->getny(), maskData->getnx(), maskData->getGridPointer(), maskData->getGridPointerStride());
         } else {
             maskData = CreateNewPartition(LONG_TYPE, totalX, totalY, dxA, dyA, 1);
             thresh = 0; //  Here we have a partition filled with ones and a 0 threshold so mask condition is always satisfied
@@ -648,14 +648,13 @@ int gridnet(char *pfile, char *plenfile, char *tlenfile, char *gordfile, char *m
             tlen->share();
 
             //If this created a cell with no contributing neighbors, put it on the queue
-           bool isTopLeftAdded = false;
+            bool isTopLeftAdded = false;
             bool isTopRightAdded = false;
             bool isBottomLeftAdded = false;
             bool isBottomRightAdded = false;
 
-            //If this created a cell with no contributing neighbors, put it on the queue
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -669,7 +668,7 @@ int gridnet(char *pfile, char *plenfile, char *tlenfile, char *gordfile, char *m
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -685,7 +684,7 @@ int gridnet(char *pfile, char *plenfile, char *tlenfile, char *gordfile, char *m
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -698,7 +697,7 @@ int gridnet(char *pfile, char *plenfile, char *tlenfile, char *gordfile, char *m
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -713,34 +712,34 @@ int gridnet(char *pfile, char *plenfile, char *tlenfile, char *gordfile, char *m
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomRightAdded = true;
             }
-            
+                       
             //Clear out borders
             neighbor->clearBorders();
 
@@ -756,11 +755,11 @@ int gridnet(char *pfile, char *plenfile, char *tlenfile, char *gordfile, char *m
         short sNodata = -1;
         float fNodata = -1.0f;
         tiffIO gordIO(gordfile, SHORT_TYPE, &sNodata, p);
-        gordIO.write(xstart, ystart, ny, nx, gord->getGridPointer());
+        gordIO.write(xstart, ystart, ny, nx, gord->getGridPointer(), gord->getGridPointerStride());
         tiffIO plenIO(plenfile, FLOAT_TYPE, &fNodata, p);
-        plenIO.write(xstart, ystart, ny, nx, plen->getGridPointer());
+        plenIO.write(xstart, ystart, ny, nx, plen->getGridPointer(), plen->getGridPointerStride());
         tiffIO tlenIO(tlenfile, FLOAT_TYPE, &fNodata, p);
-        tlenIO.write(xstart, ystart, ny, nx, tlen->getGridPointer());
+        tlenIO.write(xstart, ystart, ny, nx, tlen->getGridPointer(), tlen->getGridPointerStride());
 
         double writet = MPI_Wtime();
         double dataRead, compute, write, total, tempd;

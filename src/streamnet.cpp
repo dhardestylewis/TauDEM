@@ -392,7 +392,7 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
         int xstart, ystart;
         src->localToGlobal(0, 0, xstart, ystart);
         src->savedxdyc(srcIO);
-        srcIO.read((long) xstart, (long) ystart, (long) ny, (long) nx, src->getGridPointer());
+        srcIO.read((long) xstart, (long) ystart, (long) ny, (long) nx, src->getGridPointer(), src->getGridPointerStride());
 
         //  *** initiate flowdir grid partition from dirfile
         tiffIO dirIO(pfile, SHORT_TYPE);
@@ -404,7 +404,7 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
         tdpartition *flowDir;
         flowDir = CreateNewPartition(dirIO.getDatatype(), TotalX, TotalY, dxA, dyA, dirIO.getNodata());
         flowDir->savedxdyc(dirIO);
-        dirIO.read((long) xstart, (long) ystart, (long) ny, (long) nx, flowDir->getGridPointer());
+        dirIO.read((long) xstart, (long) ystart, (long) ny, (long) nx, flowDir->getGridPointer(), flowDir->getGridPointerStride());
 
         tiffIO ad8IO(ad8file, FLOAT_TYPE);
         if (!ad8IO.compareTiff(srcIO)) {
@@ -414,7 +414,7 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
         //Create partition and read data
         tdpartition *areaD8;
         areaD8 = CreateNewPartition(ad8IO.getDatatype(), TotalX, TotalY, dxA, dyA, ad8IO.getNodata());
-        ad8IO.read((long) xstart, (long) ystart, (long) ny, (long) nx, areaD8->getGridPointer());
+        ad8IO.read((long) xstart, (long) ystart, (long) ny, (long) nx, areaD8->getGridPointer(), areaD8->getGridPointerStride());
 
         tiffIO elevIO(elevfile, FLOAT_TYPE);
         if (!elevIO.compareTiff(srcIO)) {
@@ -424,7 +424,7 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
         //Create partition and read data
         tdpartition *elev;
         elev = CreateNewPartition(elevIO.getDatatype(), TotalX, TotalY, dxA, dyA, elevIO.getNodata());
-        elevIO.read((long) xstart, (long) ystart, (long) ny, (long) nx, elev->getGridPointer());
+        elevIO.read((long) xstart, (long) ystart, (long) ny, (long) nx, elev->getGridPointer(), elev->getGridPointerStride());
 
 
         //Create empty partition to store new ID information
@@ -589,14 +589,14 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
             contribs->addBorders();
             lengths->share();
 
-            //If this created a cell with no contributing neighbors, put it on the queue                      
+            //If this created a cell with no contributing neighbors, put it on the queue
             bool isTopLeftAdded = false;
             bool isTopRightAdded = false;
             bool isBottomLeftAdded = false;
             bool isBottomRightAdded = false;
 
             for (i = 0; i < nx; i++) {
-                if (contribs->getData(i, -1, tempShort) != 0 && contribs->getData(i, 0, tempShort) == 0) {
+                if (contribs->hasAccess(i, -1) && contribs->getData(i, -1, tempShort) != 0 && contribs->getData(i, 0, tempShort) == 0) {
                     t.x = i;
                     t.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -610,7 +610,7 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
                     }
 
                 }
-                if (contribs->getData(i, ny, tempShort) != 0 && contribs->getData(i, ny - 1, tempShort) == 0) {
+                if (contribs->hasAccess(i, ny) && contribs->getData(i, ny, tempShort) != 0 && contribs->getData(i, ny - 1, tempShort) == 0) {
                     t.x = i;
                     t.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -626,7 +626,7 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
             }
 
             for (i = 0; i < ny; i++) {
-                if (contribs->getData(-1, i, tempShort) != 0 && contribs->getData(0, i, tempShort) == 0) {
+                if (contribs->hasAccess(-1, i) && contribs->getData(-1, i, tempShort) != 0 && contribs->getData(0, i, tempShort) == 0) {
                     t.x = 0;
                     t.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -639,7 +639,7 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
                         que.push(t);
                     }
                 }
-                if (contribs->getData(nx, i, tempShort) != 0 && contribs->getData(nx - 1, i, tempShort) == 0) {
+                if (contribs->hasAccess(nx, i) && contribs->getData(nx, i, tempShort) != 0 && contribs->getData(nx - 1, i, tempShort) == 0) {
                     t.x = nx - 1;
                     t.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -654,28 +654,28 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
                 }
             }
 
-            if (contribs->getData(-1, -1, tempShort) != 0 && contribs->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (contribs->hasAccess(-1, -1) && contribs->getData(-1, -1, tempShort) != 0 && contribs->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 t.x = 0;
                 t.y = 0;
                 que.push(t);
                 isTopLeftAdded = true;
             }
 
-            if (contribs->getData(nx, -1, tempShort) != 0 && contribs->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (contribs->hasAccess(nx, -1) && contribs->getData(nx, -1, tempShort) != 0 && contribs->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 t.x = nx - 1;
                 t.y = 0;
                 que.push(t);
                 isTopRightAdded = true;
             }
 
-            if (contribs->getData(-1, ny, tempShort) != 0 && contribs->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (contribs->hasAccess(-1, ny) && contribs->getData(-1, ny, tempShort) != 0 && contribs->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 t.x = 0;
                 t.y = ny - 1;
                 que.push(t);
                 isBottomLeftAdded = true;
             }
 
-            if (contribs->getData(nx, ny, tempShort) != 0 && contribs->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (contribs->hasAccess(nx, ny) && contribs->getData(nx, ny, tempShort) != 0 && contribs->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 t.x = nx - 1;
                 t.y = ny - 1;
                 que.push(t);
@@ -1421,9 +1421,9 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
         //	}
 
         //		tiffIO ws1IO("wfile.tif", SHORT_TYPE,&tempShortNodata,ad8IO);
-        //		ws1IO.write(xstart, ystart, ny, nx, temp111->getGridPointer());
+        //		ws1IO.write(xstart, ystart, ny, nx, temp111->getGridPointer(), temp111->getGridPointerStride());
         //		tiffIO id1IO("idfile.tif", LONG_TYPE,&tempLongNodata,ad8IO);
-        //		id1IO.write(xstart, ystart, ny, nx, idGrid->getGridPointer());
+        //		id1IO.write(xstart, ystart, ny, nx, idGrid->getGridPointer(), idGrid->getGridPointerStride());
 
 
 
@@ -1609,7 +1609,7 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
         int32_t wsGridNodata = MISSINGLONG;
         short ordNodata = MISSINGSHORT;
         tiffIO wsIO(wfile, LONG_TYPE, &wsGridNodata, ad8IO);
-        wsIO.write(xstart, ystart, ny, nx, wsGrid->getGridPointer());
+        wsIO.write(xstart, ystart, ny, nx, wsGrid->getGridPointer(), wsGrid->getGridPointerStride());
         if (verbose) {
             cout << rank << " Assigning order array" << endl;
         }
@@ -1627,7 +1627,7 @@ int netsetup(char *pfile, char *srcfile, char *ordfile, char *ad8file, char *ele
             cout << rank << " Writing order file" << endl;
         }
         tiffIO ordIO(ordfile, SHORT_TYPE, &ordNodata, ad8IO);
-        ordIO.write(xstart, ystart, ny, nx, contribs->getGridPointer());
+        ordIO.write(xstart, ystart, ny, nx, contribs->getGridPointer(), contribs->getGridPointerStride());
 
         // Timer - write time
         double writet = MPI_Wtime();

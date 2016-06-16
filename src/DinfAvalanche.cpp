@@ -101,7 +101,7 @@ int avalancherunoutgrd(char *angfile, char *felfile, char *assfile, char *rzfile
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
         flowData->savedxdyc(ang);
-        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
 
         //using elevation, get information from file
         tdpartition *felData;
@@ -112,7 +112,7 @@ int avalancherunoutgrd(char *angfile, char *felfile, char *assfile, char *rzfile
             return 1;
         }
         felData = CreateNewPartition(fel.getDatatype(), totalX, totalY, dxA, dyA, fel.getNodata());
-        fel.read(xstart, ystart, felData->getny(), felData->getnx(), felData->getGridPointer());
+        fel.read(xstart, ystart, felData->getny(), felData->getnx(), felData->getGridPointer(), felData->getGridPointerStride());
 
         tdpartition *assData;
         tiffIO ass(assfile, SHORT_TYPE);
@@ -122,7 +122,7 @@ int avalancherunoutgrd(char *angfile, char *felfile, char *assfile, char *rzfile
             return 1;
         }
         assData = CreateNewPartition(ass.getDatatype(), totalX, totalY, dxA, dyA, ass.getNodata());
-        ass.read(xstart, ystart, assData->getny(), assData->getnx(), assData->getGridPointer());
+        ass.read(xstart, ystart, assData->getny(), assData->getnx(), assData->getGridPointer(), assData->getGridPointerStride());
 
         //  Calculate distances in each direction
         int kk;
@@ -323,7 +323,7 @@ int avalancherunoutgrd(char *angfile, char *felfile, char *assfile, char *rzfile
             bool isBottomRightAdded = false;
 
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -337,7 +337,7 @@ int avalancherunoutgrd(char *angfile, char *felfile, char *assfile, char *rzfile
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -353,7 +353,7 @@ int avalancherunoutgrd(char *angfile, char *felfile, char *assfile, char *rzfile
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -366,7 +366,7 @@ int avalancherunoutgrd(char *angfile, char *felfile, char *assfile, char *rzfile
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -381,28 +381,28 @@ int avalancherunoutgrd(char *angfile, char *felfile, char *assfile, char *rzfile
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
@@ -424,10 +424,10 @@ int avalancherunoutgrd(char *angfile, char *felfile, char *assfile, char *rzfile
         //Create and write TIFF file
         float scaNodata = MISSINGFLOAT;
         tiffIO rrz(rzfile, FLOAT_TYPE, &scaNodata, ang);
-        rrz.write(xstart, ystart, ny, nx, rz->getGridPointer());
+        rrz.write(xstart, ystart, ny, nx, rz->getGridPointer(), rz->getGridPointerStride());
 
         tiffIO ddm(dmfile, FLOAT_TYPE, &scaNodata, ang);
-        ddm.write(xstart, ystart, ny, nx, dm->getGridPointer());
+        ddm.write(xstart, ystart, ny, nx, dm->getGridPointer(), dm->getGridPointerStride());
 
         double writet = MPI_Wtime();
         double dataRead, compute, write, total, tempd;

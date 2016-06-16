@@ -115,7 +115,7 @@ int setdir( char* demfile, char* angfile, char *slopefile, char *flowfile, int u
 		fflush(stderr);
 	}
 
-	dem.read(xstart, ystart, ny, nx, elevDEM.getGridPointer());
+	dem.read(xstart, ystart, ny, nx, elevDEM.getGridPointer(), elevDEM.getGridPointerStride());
 	elevDEM.share();
 
 	double readt = MPI_Wtime();
@@ -172,7 +172,7 @@ int setdir( char* demfile, char* angfile, char *slopefile, char *flowfile, int u
         //Stop timer
         computeSlopet = MPI_Wtime();
         tiffIO slopeIO(slopefile, FLOAT_TYPE, &slopeNodata, dem);
-        slopeIO.write(xstart, ystart, ny, nx, slope.getGridPointer());
+        slopeIO.write(xstart, ystart, ny, nx, slope.getGridPointer(), slope.getGridPointerStride());
     }  // This bracket intended to destruct slope partition and release memory
 
     flowDir.share();
@@ -257,7 +257,7 @@ int setdir( char* demfile, char* angfile, char *slopefile, char *flowfile, int u
 	
 	float flowDirNodata=MISSINGFLOAT;
 	tiffIO flowIO(angfile, FLOAT_TYPE, &flowDirNodata, dem);
-	flowIO.write(xstart, ystart, ny, nx, flowDir.getGridPointer());
+	flowIO.write(xstart, ystart, ny, nx, flowDir.getGridPointer(), flowDir.getGridPointerStride());
 
     double writet = MPI_Wtime();
 

@@ -132,7 +132,7 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
         flowData->savedxdyc(ang);
-        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
 
         dist = new float*[ny];
         for (int m = 0; m < ny; m++)
@@ -156,7 +156,7 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
                 return 1;
             }
             weightData = CreateNewPartition(w.getDatatype(), totalX, totalY, dxA, dyA, w.getNodata());
-            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer());
+            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer(), weightData->getGridPointerStride());
         }
         tdpartition *srcData;
         tiffIO src(srcfile, SHORT_TYPE);
@@ -166,7 +166,7 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
             return 1;
         }
         srcData = CreateNewPartition(src.getDatatype(), totalX, totalY, dxA, dyA, src.getNodata());
-        src.read(xstart, ystart, srcData->getny(), srcData->getnx(), srcData->getGridPointer());
+        src.read(xstart, ystart, srcData->getny(), srcData->getnx(), srcData->getGridPointer(), srcData->getGridPointerStride());
 
         //Begin timer
         double readt = MPI_Wtime();
@@ -230,7 +230,7 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
                 char nfile[50];
                 sprintf(nfile,"neighbor.tif");
                 tiffIO ntio(nfile, SHORT_TYPE, &smv, ang);
-                ntio.write(xstart, ystart, ny, nx, neighbor->getGridPointer()); */
+                ntio.write(xstart, ystart, ny, nx, neighbor->getGridPointer(), neighbor->getGridPointerStride()); */
 
 
         finished = false;
@@ -322,9 +322,8 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
             bool isBottomLeftAdded = false;
             bool isBottomRightAdded = false;
 
-            //If this created a cell with no contributing neighbors, put it on the queue
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -338,7 +337,7 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -354,7 +353,7 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -367,7 +366,7 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -382,28 +381,28 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
@@ -423,7 +422,7 @@ int hdisttostreamgrd(char *angfile, char *wfile, char *srcfile, char *dtsfile, i
         //Create and write TIFF file
         float ddNodata = MISSINGFLOAT;
         tiffIO dd(dtsfile, FLOAT_TYPE, &ddNodata, ang);
-        dd.write(xstart, ystart, ny, nx, dts->getGridPointer());
+        dd.write(xstart, ystart, ny, nx, dts->getGridPointer(), dts->getGridPointerStride());
 
         double writet = MPI_Wtime();
         double dataRead, compute, write, total, tempd;
@@ -497,7 +496,7 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
         flowData->savedxdyc(ang);
-        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
 
         //  Elevation data
         tdpartition *felData;
@@ -509,7 +508,7 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
         }
         felData = CreateNewPartition(fel.getDatatype(), totalX, totalY, dxA, dyA, fel.getNodata());
         felData->savedxdyc(fel);
-        fel.read(xstart, ystart, felData->getny(), felData->getnx(), felData->getGridPointer());
+        fel.read(xstart, ystart, felData->getny(), felData->getnx(), felData->getGridPointer(), felData->getGridPointerStride());
 
         tdpartition *srcData;
         tiffIO src(srcfile, SHORT_TYPE);
@@ -519,7 +518,7 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
             return 1;
         }
         srcData = CreateNewPartition(src.getDatatype(), totalX, totalY, dxA, dyA, src.getNodata());
-        src.read(xstart, ystart, srcData->getny(), srcData->getnx(), srcData->getGridPointer());
+        src.read(xstart, ystart, srcData->getny(), srcData->getnx(), srcData->getGridPointer(), srcData->getGridPointerStride());
 
         //Begin timer
         double readt = MPI_Wtime();
@@ -584,7 +583,7 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
                 char nfile[50];
                 sprintf(nfile,"neighbor.tif");
                 tiffIO ntio(nfile, SHORT_TYPE, &smv, ang);
-                ntio.write(xstart, ystart, ny, nx, neighbor->getGridPointer()); */
+                ntio.write(xstart, ystart, ny, nx, neighbor->getGridPointer(), neighbor->getGridPointerStride()); */
 
 
         finished = false;
@@ -687,7 +686,7 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
             bool isBottomRightAdded = false;
 
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -701,7 +700,7 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -717,7 +716,7 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -730,7 +729,7 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -745,34 +744,34 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomRightAdded = true;
             }
-
+           
             neighbor->clearBorders();
 
             //Check if done
@@ -786,7 +785,7 @@ int vdroptostreamgrd(char *angfile, char *felfile, char *srcfile, char *dtsfile,
         //Create and write TIFF file
         float ddNodata = MISSINGFLOAT;
         tiffIO dd(dtsfile, FLOAT_TYPE, &ddNodata, ang);
-        dd.write(xstart, ystart, ny, nx, dts->getGridPointer());
+        dd.write(xstart, ystart, ny, nx, dts->getGridPointer(), dts->getGridPointerStride());
 
         double writet = MPI_Wtime();
         double dataRead, compute, write, total, tempd;
@@ -866,7 +865,7 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
         flowData->savedxdyc(ang);
-        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
         dist = new float*[ny];
         for (int m = 0; m < ny; m++)
             dist[m] = new float[9];
@@ -888,7 +887,7 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
         }
         felData = CreateNewPartition(fel.getDatatype(), totalX, totalY, dxA, dyA, fel.getNodata());
         felData->savedxdyc(fel);
-        fel.read(xstart, ystart, felData->getny(), felData->getnx(), felData->getGridPointer());
+        fel.read(xstart, ystart, felData->getny(), felData->getnx(), felData->getGridPointer(), felData->getGridPointerStride());
 
         //if using weightData, get information from file
         tdpartition *weightData;
@@ -900,7 +899,7 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                 return 1;
             }
             weightData = CreateNewPartition(w.getDatatype(), totalX, totalY, dxA, dyA, w.getNodata());
-            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer());
+            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer(), weightData->getGridPointerStride());
         }
 
         tdpartition *srcData;
@@ -911,7 +910,7 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
             return 1;
         }
         srcData = CreateNewPartition(src.getDatatype(), totalX, totalY, dxA, dyA, src.getNodata());
-        src.read(xstart, ystart, srcData->getny(), srcData->getnx(), srcData->getGridPointer());
+        src.read(xstart, ystart, srcData->getny(), srcData->getnx(), srcData->getGridPointer(), srcData->getGridPointerStride());
 
         //Begin timer
         double readt = MPI_Wtime();
@@ -980,7 +979,7 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                 char nfile[50];
                 sprintf(nfile,"neighbor.tif");
                 tiffIO ntio(nfile, SHORT_TYPE, &smv, ang);
-                ntio.write(xstart, ystart, ny, nx, neighbor->getGridPointer()); */
+                ntio.write(xstart, ystart, ny, nx, neighbor->getGridPointer(), neighbor->getGridPointerStride()); */
 
 
         finished = false;
@@ -1095,14 +1094,13 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
             dtsv->share();
             neighbor->addBorders();
 
-            //If this created a cell with no contributing neighbors, put it on the queue
             bool isTopLeftAdded = false;
             bool isTopRightAdded = false;
             bool isBottomLeftAdded = false;
             bool isBottomRightAdded = false;
 
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -1116,7 +1114,7 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -1132,7 +1130,7 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -1145,7 +1143,7 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -1160,34 +1158,34 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomRightAdded = true;
             }
-
+            
             neighbor->clearBorders();
 
             //Check if done
@@ -1214,7 +1212,7 @@ int pdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
         //Create and write TIFF file
         float ddNodata = MISSINGFLOAT;
         tiffIO dd(dtsfile, FLOAT_TYPE, &ddNodata, ang);
-        dd.write(xstart, ystart, ny, nx, dtsh->getGridPointer());
+        dd.write(xstart, ystart, ny, nx, dtsh->getGridPointer(), dtsh->getGridPointerStride());
 
         double writet = MPI_Wtime();
         double dataRead, compute, write, total, tempd;
@@ -1293,7 +1291,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
         flowData->savedxdyc(ang);
-        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
 
         dist = new float*[ny];
         for (int m = 0; m < ny; m++)
@@ -1316,7 +1314,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
         }
         felData = CreateNewPartition(fel.getDatatype(), totalX, totalY, dxA, dyA, fel.getNodata());
         felData->savedxdyc(fel);
-        fel.read(xstart, ystart, felData->getny(), felData->getnx(), felData->getGridPointer());
+        fel.read(xstart, ystart, felData->getny(), felData->getnx(), felData->getGridPointer(), felData->getGridPointerStride());
 
         //if using weightData, get information from file
         tdpartition *weightData;
@@ -1328,7 +1326,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                 return 1;
             }
             weightData = CreateNewPartition(w.getDatatype(), totalX, totalY, dxA, dyA, w.getNodata());
-            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer());
+            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer(), weightData->getGridPointerStride());
         }
 
         tdpartition *srcData;
@@ -1339,7 +1337,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
             return 1;
         }
         srcData = CreateNewPartition(src.getDatatype(), totalX, totalY, dxA, dyA, src.getNodata());
-        src.read(xstart, ystart, srcData->getny(), srcData->getnx(), srcData->getGridPointer());
+        src.read(xstart, ystart, srcData->getny(), srcData->getnx(), srcData->getGridPointer(), srcData->getGridPointerStride());
 
         //Begin timer
         double readt = MPI_Wtime();
@@ -1404,7 +1402,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                 char nfile[50];
                 sprintf(nfile,"neighbor.tif");
                 tiffIO ntio(nfile, SHORT_TYPE, &smv, ang);
-                ntio.write(xstart, ystart, ny, nx, neighbor->getGridPointer()); */
+                ntio.write(xstart, ystart, ny, nx, neighbor->getGridPointer(), neighbor->getGridPointerStride()); */
 
 
         finished = false;
@@ -1513,7 +1511,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
             bool isBottomRightAdded = false;
 
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -1527,7 +1525,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -1543,7 +1541,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -1556,7 +1554,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -1571,28 +1569,28 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
@@ -1612,7 +1610,7 @@ int sdisttostreamgrd(char *angfile, char *felfile, char *wfile, char *srcfile, c
         //Create and write TIFF file
         float ddNodata = MISSINGFLOAT;
         tiffIO dd(dtsfile, FLOAT_TYPE, &ddNodata, ang);
-        dd.write(xstart, ystart, ny, nx, dts->getGridPointer());
+        dd.write(xstart, ystart, ny, nx, dts->getGridPointer(), dts->getGridPointerStride());
 
         double writet = MPI_Wtime();
         double dataRead, compute, write, total, tempd;

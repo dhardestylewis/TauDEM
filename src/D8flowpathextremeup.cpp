@@ -113,7 +113,7 @@ int d8flowpathextremeup(char *pfile, char*safile, char *ssafile, int usemax, cha
         int ny = flowData->getny();
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
-        p.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        p.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
 
         //Read input grid for which extreme upslope values are required (ss grid)
         tdpartition *saData;
@@ -124,7 +124,7 @@ int d8flowpathextremeup(char *pfile, char*safile, char *ssafile, int usemax, cha
             return 1;
         }
         saData = CreateNewPartition(sa.getDatatype(), totalX, totalY, dxA, dyA, sa.getNodata());
-        sa.read(xstart, ystart, ny, nx, saData->getGridPointer());
+        sa.read(xstart, ystart, ny, nx, saData->getGridPointer(), saData->getGridPointerStride());
 
         //Record time reading files
         double readt = MPI_Wtime();
@@ -225,7 +225,7 @@ int d8flowpathextremeup(char *pfile, char*safile, char *ssafile, int usemax, cha
             bool isBottomRightAdded = false;
 
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -239,7 +239,7 @@ int d8flowpathextremeup(char *pfile, char*safile, char *ssafile, int usemax, cha
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -255,7 +255,7 @@ int d8flowpathextremeup(char *pfile, char*safile, char *ssafile, int usemax, cha
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -268,7 +268,7 @@ int d8flowpathextremeup(char *pfile, char*safile, char *ssafile, int usemax, cha
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -283,33 +283,34 @@ int d8flowpathextremeup(char *pfile, char*safile, char *ssafile, int usemax, cha
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomRightAdded = true;
             }
+            
             //Clear out borders
             neighbor->clearBorders();
 
@@ -324,7 +325,7 @@ int d8flowpathextremeup(char *pfile, char*safile, char *ssafile, int usemax, cha
         //Create and write TIFF file
         float aNodata = MISSINGFLOAT;
         tiffIO a(ssafile, FLOAT_TYPE, &aNodata, p);
-        a.write(xstart, ystart, ny, nx, ssa->getGridPointer());
+        a.write(xstart, ystart, ny, nx, ssa->getGridPointer(), ssa->getGridPointerStride());
         double writet = MPI_Wtime();
         double dataRead, compute, write, total, tempd;
         dataRead = readt - begint;

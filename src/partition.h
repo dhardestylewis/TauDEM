@@ -102,7 +102,9 @@ class tdpartition{
         //There are multiple copies of these functions so that classes that inherit
         //from tdpartition can be template classes.  These classes MUST declare as
         //their template type one of the types declared for these functions.
-        virtual void* getGridPointer() const {return (void*)NULL;}
+        virtual void* getGridPointer() const = 0;
+        virtual int getGridPointerStride() const = 0;
+
         virtual void setToNodata(int x, int y) = 0;
 
         virtual void init(long totalx, long totaly, double dx_in, double dy_in, MPI_Datatype MPIt, short nd){}

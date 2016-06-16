@@ -131,7 +131,7 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
         flowData->savedxdyc(ang);
-        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
 
         //Decay multiplier grid, get information from file
         tdpartition *dmData;
@@ -142,7 +142,7 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
             return 1;
         }
         dmData = CreateNewPartition(dm.getDatatype(), totalX, totalY, dxA, dyA, dm.getNodata());
-        dm.read(xstart, ystart, dmData->getny(), dmData->getnx(), dmData->getGridPointer());
+        dm.read(xstart, ystart, dmData->getny(), dmData->getnx(), dmData->getGridPointer(), dmData->getGridPointerStride());
 
         //if using indicator grid, get information from file
         tdpartition *dgData;
@@ -153,7 +153,7 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
             return 1;
         }
         dgData = CreateNewPartition(dg.getDatatype(), totalX, totalY, dxA, dyA, dg.getNodata());
-        dg.read(xstart, ystart, dgData->getny(), dgData->getnx(), dgData->getGridPointer());
+        dg.read(xstart, ystart, dgData->getny(), dgData->getnx(), dgData->getGridPointer(), dgData->getGridPointerStride());
 
         tdpartition *qData;
         tiffIO q(qfile, FLOAT_TYPE);
@@ -163,7 +163,7 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
             return 1;
         }
         qData = CreateNewPartition(q.getDatatype(), totalX, totalY, dxA, dyA, q.getNodata());
-        q.read(xstart, ystart, qData->getny(), qData->getnx(), qData->getGridPointer());
+        q.read(xstart, ystart, qData->getny(), qData->getnx(), qData->getGridPointer(), qData->getGridPointerStride());
 
         //Begin timer
         double readt = MPI_Wtime();
@@ -287,7 +287,7 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
             bool isBottomRightAdded = false;
 
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -301,7 +301,7 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -317,7 +317,7 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -330,7 +330,7 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -345,34 +345,34 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomRightAdded = true;
             }
-            
+                        
             //Clear out borders
             neighbor->clearBorders();
 
@@ -387,7 +387,7 @@ int dsllArea(char* angfile, char* ctptfile, char* dmfile, char* datasrc, char* l
         //Create and write TIFF file
         float scaNodata = MISSINGFLOAT;
         tiffIO cctpt(ctptfile, FLOAT_TYPE, &scaNodata, ang);
-        cctpt.write(xstart, ystart, ny, nx, ctpt->getGridPointer());
+        cctpt.write(xstart, ystart, ny, nx, ctpt->getGridPointer(), ctpt->getGridPointerStride());
 
         double writet = MPI_Wtime();
         double dataRead, compute, write, total, tempd;

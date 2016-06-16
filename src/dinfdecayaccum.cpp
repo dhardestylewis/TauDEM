@@ -129,7 +129,7 @@ int dmarea(char* angfile, char* adecfile, char* dmfile, char* datasrc, char* lyr
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
         flowData->savedxdyc(ang);
-        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
 
         //Decay multiplier grid, get information from file
         tdpartition *dmData;
@@ -140,7 +140,7 @@ int dmarea(char* angfile, char* adecfile, char* dmfile, char* datasrc, char* lyr
             return 1;
         }
         dmData = CreateNewPartition(dmm.getDatatype(), totalX, totalY, dxA, dyA, dmm.getNodata());
-        dmm.read(xstart, ystart, dmData->getny(), dmData->getnx(), dmData->getGridPointer());
+        dmm.read(xstart, ystart, dmData->getny(), dmData->getnx(), dmData->getGridPointer(), dmData->getGridPointerStride());
 
         //if using weightData, get information from file
         tdpartition *weightData;
@@ -152,7 +152,7 @@ int dmarea(char* angfile, char* adecfile, char* dmfile, char* datasrc, char* lyr
                 return 1; //And maybe an unhappy error message
             }
             weightData = CreateNewPartition(w.getDatatype(), totalX, totalY, dxA, dyA, w.getNodata());
-            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer());
+            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer(), weightData->getGridPointerStride());
         }
 
         //Record time reading files
@@ -268,9 +268,8 @@ int dmarea(char* angfile, char* adecfile, char* dmfile, char* datasrc, char* lyr
             bool isBottomLeftAdded = false;
             bool isBottomRightAdded = false;
 
-            //If this created a cell with no contributing neighbors, put it on the queue
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -284,7 +283,7 @@ int dmarea(char* angfile, char* adecfile, char* dmfile, char* datasrc, char* lyr
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -300,7 +299,7 @@ int dmarea(char* angfile, char* adecfile, char* dmfile, char* datasrc, char* lyr
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -313,7 +312,7 @@ int dmarea(char* angfile, char* adecfile, char* dmfile, char* datasrc, char* lyr
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -328,33 +327,34 @@ int dmarea(char* angfile, char* adecfile, char* dmfile, char* datasrc, char* lyr
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomRightAdded = true;
             }
+
             //Clear out borders
             neighbor->clearBorders();
 
@@ -369,7 +369,7 @@ int dmarea(char* angfile, char* adecfile, char* dmfile, char* datasrc, char* lyr
         //Create and write TIFF file
         float scaNodata = MISSINGFLOAT;
         tiffIO dsca(adecfile, FLOAT_TYPE, &scaNodata, ang);
-        dsca.write(xstart, ystart, ny, nx, daccum->getGridPointer());
+        dsca.write(xstart, ystart, ny, nx, daccum->getGridPointer(), daccum->getGridPointerStride());
 
         double writet = MPI_Wtime();
         double dataRead, compute, write, total, tempd;

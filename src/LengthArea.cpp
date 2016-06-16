@@ -81,13 +81,13 @@ int lengtharea(char *plenfile, char*ad8file, char *ssfile, float *p)
 	int ny = plenData->getny();
 	int xstart, ystart;
 	plenData->localToGlobal(0, 0, xstart, ystart);
-	plen.read(xstart, ystart, ny, nx, plenData->getGridPointer());
+	plen.read(xstart, ystart, ny, nx, plenData->getGridPointer(), plenData->getGridPointerStride());
 
 	tdpartition *ad8Data;
 	tiffIO ad8(ad8file, LONG_TYPE);
 	if(!plen.compareTiff(ad8)) return 1;  //And maybe an unhappy error message
 	ad8Data = CreateNewPartition(ad8.getDatatype(), totalX, totalY, dxA, dyA, ad8.getNodata());
-	ad8.read(xstart, ystart, ad8Data->getny(), ad8Data->getnx(), ad8Data->getGridPointer());
+	ad8.read(xstart, ystart, ad8Data->getny(), ad8Data->getnx(), ad8Data->getGridPointer(), ad8Data->getGridPointerStride());
 	
 	//Begin timer
 	begin = MPI_Wtime();
@@ -140,7 +140,7 @@ int lengtharea(char *plenfile, char*ad8file, char *ssfile, float *p)
 	//Create and write TIFF file
 	short aNodata = -32768;
 	tiffIO sss(ssfile, SHORT_TYPE, &aNodata, ad8);
-	sss.write(xstart, ystart, ny, nx, ss->getGridPointer());
+	sss.write(xstart, ystart, ny, nx, ss->getGridPointer(), ss->getGridPointerStride());
 
 	//Brackets force MPI-dependent objects to go out of scope before Finalize is called
 	}MPI_Finalize();

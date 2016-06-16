@@ -112,7 +112,7 @@ int aread8(char* pfile, char* afile, char *datasrc, char *lyrname, int uselyrnam
         int ny = flowData->getny();
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
-        p.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        p.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
 
         //if using weightData, get information from file
         tdpartition *weightData;
@@ -124,7 +124,7 @@ int aread8(char* pfile, char* afile, char *datasrc, char *lyrname, int uselyrnam
                 return 1;
             }
             weightData = CreateNewPartition(w.getDatatype(), totalX, totalY, dxA, dyA, w.getNodata());
-            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer());
+            w.read(xstart, ystart, weightData->getny(), weightData->getnx(), weightData->getGridPointer(), weightData->getGridPointerStride());
         }
 
         //Begin timer
@@ -241,7 +241,7 @@ int aread8(char* pfile, char* afile, char *datasrc, char *lyrname, int uselyrnam
 
             //If this created a cell with no contributing neighbors, put it on the queue
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -255,7 +255,7 @@ int aread8(char* pfile, char* afile, char *datasrc, char *lyrname, int uselyrnam
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -271,7 +271,7 @@ int aread8(char* pfile, char* afile, char *datasrc, char *lyrname, int uselyrnam
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -284,7 +284,7 @@ int aread8(char* pfile, char* afile, char *datasrc, char *lyrname, int uselyrnam
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -299,28 +299,28 @@ int aread8(char* pfile, char* afile, char *datasrc, char *lyrname, int uselyrnam
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
@@ -341,7 +341,7 @@ int aread8(char* pfile, char* afile, char *datasrc, char *lyrname, int uselyrnam
         //Create and write TIFF file
         float aNodata = -1.0f;
         tiffIO a(afile, FLOAT_TYPE, &aNodata, p);
-        a.write(xstart, ystart, ny, nx, aread8->getGridPointer());
+        a.write(xstart, ystart, ny, nx, aread8->getGridPointer(), aread8->getGridPointerStride());
         double writet = MPI_Wtime();
         if (rank == 0)
             printf("Number of Processes: %d\nRead time: %f\nCompute time: %f\nWrite time: %f\nTotal time: %f\n",

@@ -91,7 +91,7 @@ int sloped(char *pfile,char* felfile,char* slpdfile, double dn)
 	int xstart, ystart;
 	z->localToGlobal(0, 0, xstart, ystart);
 	z->savedxdyc(dem);
-	dem.read(xstart, ystart, ny, nx, z->getGridPointer());	
+	dem.read(xstart, ystart, ny, nx, z->getGridPointer(), z->getGridPointerStride());	
 
 	//Read flow directions 
 	tiffIO pIO(pfile,SHORT_TYPE);
@@ -103,7 +103,7 @@ int sloped(char *pfile,char* felfile,char* slpdfile, double dn)
 	//Create partition and read data
 	tdpartition *p;
 	p = CreateNewPartition(pIO.getDatatype(), totalX, totalY, dxA, dyA, pIO.getNodata());
-	pIO.read(xstart, ystart, ny, nx, p->getGridPointer());
+	pIO.read(xstart, ystart, ny, nx, p->getGridPointer(), p->getGridPointerStride());
 
 // begin timer
 	double readt = MPI_Wtime();
@@ -268,7 +268,7 @@ int sloped(char *pfile,char* felfile,char* slpdfile, double dn)
 	//Create and write TIFF file
 	float slpnd = MISSINGFLOAT;
 	tiffIO slpIO(slpdfile, FLOAT_TYPE, &slpnd, pIO);
-	slpIO.write(xstart, ystart, ny, nx, sd->getGridPointer());
+	slpIO.write(xstart, ystart, ny, nx, sd->getGridPointer(), sd->getGridPointerStride());
 
 	double writet = MPI_Wtime();
         double dataRead, compute, write, total,temp;

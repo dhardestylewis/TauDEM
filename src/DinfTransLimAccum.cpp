@@ -131,7 +131,7 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
         int xstart, ystart;
         flowData->localToGlobal(0, 0, xstart, ystart);
         flowData->savedxdyc(ang);
-        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer());
+        ang.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
 
         //Transport supply grid, get information from file
         tdpartition *tsupData;
@@ -142,7 +142,7 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
             return 1;
         }
         tsupData = CreateNewPartition(tsup.getDatatype(), totalX, totalY, dxA, dyA, tsup.getNodata());
-        tsup.read(xstart, ystart, tsupData->getny(), tsupData->getnx(), tsupData->getGridPointer());
+        tsup.read(xstart, ystart, tsupData->getny(), tsupData->getnx(), tsupData->getGridPointer(), tsupData->getGridPointerStride());
 
         //Transport capacity grid, get information from file
         tdpartition *tcData;
@@ -153,7 +153,7 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
             return 1;
         }
         tcData = CreateNewPartition(tc.getDatatype(), totalX, totalY, dxA, dyA, tc.getNodata());
-        tc.read(xstart, ystart, tcData->getny(), tcData->getnx(), tcData->getGridPointer());
+        tc.read(xstart, ystart, tcData->getny(), tcData->getnx(), tcData->getGridPointer(), tcData->getGridPointerStride());
 
         //if using concentration grid, get information from file	
         tdpartition *cinData;
@@ -165,7 +165,7 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
                 return 1;
             }
             cinData = CreateNewPartition(cin.getDatatype(), totalX, totalY, dxA, dyA, cin.getNodata());
-            cin.read(xstart, ystart, cinData->getny(), cinData->getnx(), cinData->getGridPointer());
+            cin.read(xstart, ystart, cinData->getny(), cinData->getnx(), cinData->getGridPointer(), cinData->getGridPointerStride());
         }
 
         //Begin timer
@@ -322,7 +322,7 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
             bool isBottomRightAdded = false;
 
             for (i = 0; i < nx; i++) {
-                if (neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
+                if (neighbor->hasAccess(i, -1) && neighbor->getData(i, -1, tempShort) != 0 && neighbor->getData(i, 0, tempShort) == 0) {
                     temp.x = i;
                     temp.y = 0;
                     if (i == 0 && !isTopLeftAdded) {
@@ -336,7 +336,7 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
                     }
 
                 }
-                if (neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
+                if (neighbor->hasAccess(i, ny) && neighbor->getData(i, ny, tempShort) != 0 && neighbor->getData(i, ny - 1, tempShort) == 0) {
                     temp.x = i;
                     temp.y = ny - 1;
                     if (i == 0 && !isBottomLeftAdded) {
@@ -352,7 +352,7 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
             }
 
             for (i = 0; i < ny; i++) {
-                if (neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
+                if (neighbor->hasAccess(-1, i) && neighbor->getData(-1, i, tempShort) != 0 && neighbor->getData(0, i, tempShort) == 0) {
                     temp.x = 0;
                     temp.y = i;
                     if (i == 0 && !isTopLeftAdded) {
@@ -365,7 +365,7 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
                         que.push(temp);
                     }
                 }
-                if (neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
+                if (neighbor->hasAccess(nx, i) && neighbor->getData(nx, i, tempShort) != 0 && neighbor->getData(nx - 1, i, tempShort) == 0) {
                     temp.x = nx - 1;
                     temp.y = i;
                     if (i == 0 && !isTopRightAdded) {
@@ -380,33 +380,34 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
                 }
             }
 
-            if (neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+            if (neighbor->hasAccess(-1, -1) && neighbor->getData(-1, -1, tempShort) != 0 && neighbor->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                 temp.x = 0;
                 temp.y = 0;
                 que.push(temp);
                 isTopLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+            if (neighbor->hasAccess(nx, -1) && neighbor->getData(nx, -1, tempShort) != 0 && neighbor->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                 temp.x = nx - 1;
                 temp.y = 0;
                 que.push(temp);
                 isTopRightAdded = true;
             }
 
-            if (neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+            if (neighbor->hasAccess(-1, ny) && neighbor->getData(-1, ny, tempShort) != 0 && neighbor->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                 temp.x = 0;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomLeftAdded = true;
             }
 
-            if (neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+            if (neighbor->hasAccess(nx, ny) && neighbor->getData(nx, ny, tempShort) != 0 && neighbor->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                 temp.x = nx - 1;
                 temp.y = ny - 1;
                 que.push(temp);
                 isBottomRightAdded = true;
             }
+                   
             // Clear out borders
             neighbor->clearBorders();
 
@@ -421,14 +422,14 @@ int tlaccum(char *angfile, char *tsupfile, char *tcfile, char *tlafile, char *de
         //Create and write TIFF file
         float scaNodata = MISSINGFLOAT;
         tiffIO ttla(tlafile, FLOAT_TYPE, &scaNodata, ang);
-        ttla.write(xstart, ystart, ny, nx, tla->getGridPointer());
+        ttla.write(xstart, ystart, ny, nx, tla->getGridPointer(), tla->getGridPointerStride());
 
         tiffIO ddep(depfile, FLOAT_TYPE, &scaNodata, ang);
-        ddep.write(xstart, ystart, ny, nx, dep->getGridPointer());
+        ddep.write(xstart, ystart, ny, nx, dep->getGridPointer(), dep->getGridPointerStride());
 
         if (usec == 1) {
             tiffIO ccsout(coutfile, FLOAT_TYPE, &scaNodata, ang);
-            ccsout.write(xstart, ystart, ny, nx, csout->getGridPointer());
+            ccsout.write(xstart, ystart, ny, nx, csout->getGridPointer(), csout->getGridPointerStride());
         }
 
         double writet = MPI_Wtime();

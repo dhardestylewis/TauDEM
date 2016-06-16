@@ -123,13 +123,14 @@ int flood( char* demfile, char* felfile, char *sfdrfile, int usesfdr, bool verbo
 		fflush(stdout);
 	}
 
-	dem.read(xstart, ystart, ny, nx, elevDEM->getGridPointer());	
-  if (use_mask)
-	  depmask->read(xstart, ystart, ny, nx, maskPartition->getGridPointer());	
+    dem.read(xstart, ystart, ny, nx, elevDEM->getGridPointer(), elevDEM->getGridPointerStride());
 
-/////////////////////////////////
-// begin timer
-	double readt = MPI_Wtime();
+    if (use_mask)
+        depmask->read(xstart, ystart, ny, nx, maskPartition->getGridPointer(), maskPartition->getGridPointerStride());	
+
+    /////////////////////////////////
+    // begin timer
+    double readt = MPI_Wtime();
 
 	//Create empty partition to store new information
 	tdpartition *planchon;
@@ -492,7 +493,7 @@ int flood( char* demfile, char* felfile, char *sfdrfile, int usesfdr, bool verbo
 
 	//Create and write TIFF file
 	tiffIO fel(felfile, FLOAT_TYPE, &felNodata, dem);
-	fel.write(xstart, ystart, ny, nx, planchon->getGridPointer());
+	fel.write(xstart, ystart, ny, nx, planchon->getGridPointer(), planchon->getGridPointerStride());
 
 	if(verbose)printf("Partition: %d, written\n",rank);
 	double headerRead, dataRead, compute, write, total,temp;

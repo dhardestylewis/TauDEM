@@ -217,7 +217,6 @@ tiffIO::tiffIO(char *fname, DATA_TYPE newtype, void* nd, const tiffIO &copy) {
 }
 
 tiffIO::~tiffIO() {
-
     delete dxc;
     delete dyc;
 }
@@ -225,7 +224,7 @@ tiffIO::~tiffIO() {
 //Read tiff file data/image values beginning at xstart, ystart (gridwide coordinates) for the numRows, and numCols indicated to memory locations specified by dest
 //BT void tiffIO::read(unsigned long long xstart, unsigned long long ystart, unsigned long long numRows, unsigned long long numCols, void* dest) {
 
-void tiffIO::read(long xstart, long ystart, long numRows, long numCols, void* dest) {
+void tiffIO::read(long xstart, long ystart, long numRows, long numCols, void* dest, int destStride) {
     //cout << "read: " << xstart << " " << ystart << " " << numRows << " " << numCols << endl;
     GDALDataType eBDataType;
     if (datatype == FLOAT_TYPE)
@@ -237,13 +236,13 @@ void tiffIO::read(long xstart, long ystart, long numRows, long numCols, void* de
 
     GDALRasterIO(bandh, GF_Read, xstart, ystart, numCols, numRows,
             dest, numCols, numRows, eBDataType,
-            0, 0);
+            0, destStride);
 }
 
 //Create/re-write tiff output file
 //BT void tiffIO::write(unsigned long long xstart, unsigned long long ystart, unsigned long long numRows, unsigned long long numCols, void* source) {
 
-void tiffIO::write(long xstart, long ystart, long numRows, long numCols, void* source) {
+void tiffIO::write(long xstart, long ystart, long numRows, long numCols, void* source, int sourceStride) {
     MPI_Status status;
     fflush(stdout);
     char **papszMetadata;
@@ -342,7 +341,7 @@ void tiffIO::write(long xstart, long ystart, long numRows, long numCols, void* s
 
         GDALRasterIO(bandh, GF_Write, 0, 0, numCols, numRows,
                 source, numCols, numRows, eBDataType,
-                0, 0);
+                0, sourceStride);
 
         GDALFlushCache(fh); //  DGT effort get large files properly written
         GDALClose(fh);
@@ -430,7 +429,7 @@ void tiffIO::write(long xstart, long ystart, long numRows, long numCols, void* s
 
             GDALRasterIO(bandh, GF_Write, xstart, ystart, numCols, numRows,
                     source, numCols, numRows, eBDataType,
-                    0, 0);
+                    0, sourceStride);
 
             GDALFlushCache(fh); //  DGT effort get large files properly written
             GDALClose(fh);
@@ -468,7 +467,7 @@ void tiffIO::write(long xstart, long ystart, long numRows, long numCols, void* s
 
             GDALRasterIO(bandh, GF_Write, xstart, ystart, numCols, numRows,
                     source, numCols, numRows, eBDataType,
-                    0, 0);
+                    0, sourceStride);
 
             GDALFlushCache(fh); //  DGT effort get large files properly written
             GDALClose(fh);

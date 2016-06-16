@@ -204,7 +204,7 @@ int dropan(char *areafile, char *dirfile, char *elevfile, char *ssafile, char *d
         int ssaxstart, ssaystart;
         ssaData->localToGlobal(0, 0, ssaxstart, ssaystart);
         ssaData->savedxdyc(ssa);
-        ssa.read((long) ssaxstart, (long) ssaystart, (long) ssany, (long) ssanx, ssaData->getGridPointer());
+        ssa.read((long) ssaxstart, (long) ssaystart, (long) ssany, (long) ssanx, ssaData->getGridPointer(), ssaData->getGridPointerStride());
 
         float ssadiag;
         //ssadiag=sqrt((ssadx*ssadx)+(ssady*ssady));
@@ -226,7 +226,7 @@ int dropan(char *areafile, char *dirfile, char *elevfile, char *ssafile, char *d
         int dirny = dirData->getny();
         int dirxstart, dirystart;
         dirData->localToGlobal(0, 0, dirxstart, dirystart);
-        dir.read((long) dirxstart, (long) dirystart, (long) dirny, (long) dirnx, dirData->getGridPointer());
+        dir.read((long) dirxstart, (long) dirystart, (long) dirny, (long) dirnx, dirData->getGridPointer(), dirData->getGridPointerStride());
 
 
         //  *** initiate Aread8 grid partition from areafile //DGT changed to float to be flexible for large areas and also to include cell size (at cost of some imprecision)
@@ -242,7 +242,7 @@ int dropan(char *areafile, char *dirfile, char *elevfile, char *ssafile, char *d
         int areany = areaData->getny();
         int areaxstart, areaystart;
         areaData->localToGlobal(0, 0, areaxstart, areaystart);
-        area.read(areaxstart, areaystart, areany, areanx, areaData->getGridPointer());
+        area.read(areaxstart, areaystart, areany, areanx, areaData->getGridPointer(), areaData->getGridPointerStride());
 
 
         if (!dir.compareTiff(ssa)) {
@@ -325,7 +325,7 @@ int dropan(char *areafile, char *dirfile, char *elevfile, char *ssafile, char *d
         int elevny = elevData->getny();
         int elevxstart, elevystart;
         elevData->localToGlobal(0, 0, elevxstart, elevystart);
-        elev.read((long) elevxstart, (long) elevystart, (long) elevny, (long) elevnx, elevData->getGridPointer());
+        elev.read((long) elevxstart, (long) elevystart, (long) elevny, (long) elevnx, elevData->getGridPointer(), elevData->getGridPointerStride());
 
 
         // compare to ssa size
@@ -533,16 +533,14 @@ int dropan(char *areafile, char *dirfile, char *elevfile, char *ssafile, char *d
                 elevOut->share();
                 orderOut->share();
 
+                //If this created a cell with no contributing neighbors, put it on the queue
                 bool isTopLeftAdded = false;
                 bool isTopRightAdded = false;
                 bool isBottomLeftAdded = false;
                 bool isBottomRightAdded = false;
 
-                //If this created a cell with no contributing neighbors, put it on the queue
                 for (i = 0; i < nx; i++) {
-                    //				if(i == 228)
-                    //					i=i;
-                    if (contribs->getData(i, -1, tempShort) != 0 && contribs->getData(i, 0, tempShort) == 0) {
+                    if (contribs->hasAccess(i, -1) && contribs->getData(i, -1, tempShort) != 0 && contribs->getData(i, 0, tempShort) == 0) {
                         t.x = i;
                         t.y = 0;
                         if (i == 0 && !isTopLeftAdded) {
@@ -554,9 +552,9 @@ int dropan(char *areafile, char *dirfile, char *elevfile, char *ssafile, char *d
                         } else if (i != 0 && i != nx - 1) {
                             que.push(t);
                         }
-                    }
 
-                    if (contribs->getData(i, ny, tempShort) != 0 && contribs->getData(i, ny - 1, tempShort) == 0) {
+                    }
+                    if (contribs->hasAccess(i, ny) && contribs->getData(i, ny, tempShort) != 0 && contribs->getData(i, ny - 1, tempShort) == 0) {
                         t.x = i;
                         t.y = ny - 1;
                         if (i == 0 && !isBottomLeftAdded) {
@@ -572,9 +570,7 @@ int dropan(char *areafile, char *dirfile, char *elevfile, char *ssafile, char *d
                 }
 
                 for (i = 0; i < ny; i++) {
-                    //				if(i == 228)
-                    //					i=i;
-                    if (contribs->getData(-1, i, tempShort) != 0 && contribs->getData(0, i, tempShort) == 0) {
+                    if (contribs->hasAccess(-1, i) && contribs->getData(-1, i, tempShort) != 0 && contribs->getData(0, i, tempShort) == 0) {
                         t.x = 0;
                         t.y = i;
                         if (i == 0 && !isTopLeftAdded) {
@@ -587,7 +583,7 @@ int dropan(char *areafile, char *dirfile, char *elevfile, char *ssafile, char *d
                             que.push(t);
                         }
                     }
-                    if (contribs->getData(nx, i, tempShort) != 0 && contribs->getData(nx - 1, i, tempShort) == 0) {
+                    if (contribs->hasAccess(nx, i) && contribs->getData(nx, i, tempShort) != 0 && contribs->getData(nx - 1, i, tempShort) == 0) {
                         t.x = nx - 1;
                         t.y = i;
                         if (i == 0 && !isTopRightAdded) {
@@ -602,33 +598,34 @@ int dropan(char *areafile, char *dirfile, char *elevfile, char *ssafile, char *d
                     }
                 }
 
-                if (contribs->getData(-1, -1, tempShort) != 0 && contribs->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
+                if (contribs->hasAccess(-1, -1) && contribs->getData(-1, -1, tempShort) != 0 && contribs->getData(0, 0, tempShort) == 0 && !isTopLeftAdded) {
                     t.x = 0;
                     t.y = 0;
                     que.push(t);
                     isTopLeftAdded = true;
                 }
 
-                if (contribs->getData(nx, -1, tempShort) != 0 && contribs->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
+                if (contribs->hasAccess(nx, -1) && contribs->getData(nx, -1, tempShort) != 0 && contribs->getData(nx - 1, 0, tempShort) == 0 && !isTopRightAdded) {
                     t.x = nx - 1;
                     t.y = 0;
                     que.push(t);
                     isTopRightAdded = true;
                 }
 
-                if (contribs->getData(-1, ny, tempShort) != 0 && contribs->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
+                if (contribs->hasAccess(-1, ny) && contribs->getData(-1, ny, tempShort) != 0 && contribs->getData(0, ny - 1, tempShort) == 0 && !isBottomLeftAdded) {
                     t.x = 0;
                     t.y = ny - 1;
                     que.push(t);
                     isBottomLeftAdded = true;
                 }
 
-                if (contribs->getData(nx, ny, tempShort) != 0 && contribs->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
+                if (contribs->hasAccess(nx, ny) && contribs->getData(nx, ny, tempShort) != 0 && contribs->getData(nx - 1, ny - 1, tempShort) == 0 && !isBottomRightAdded) {
                     t.x = nx - 1;
                     t.y = ny - 1;
                     que.push(t);
                     isBottomRightAdded = true;
                 }
+
 
                 contribs->clearBorders();
 

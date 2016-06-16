@@ -89,7 +89,7 @@ int peukerdouglas(char *felfile, char *ssfile,float *p)
 	int globalxstart, globalystart; 			
 	elev->localToGlobal(0, 0, globalxstart, globalystart);  
 
-	felev.read((long)globalxstart, (long)globalystart, (long)elevny, (long)elevnx, elev->getGridPointer());
+	felev.read((long)globalxstart, (long)globalystart, (long)elevny, (long)elevnx, elev->getGridPointer(), elev->getGridPointerStride());
 
 	//Record time reading files
 	double readt = MPI_Wtime();
@@ -216,7 +216,7 @@ int peukerdouglas(char *felfile, char *ssfile,float *p)
 	double computet = MPI_Wtime();
 	tiffIO outelev(ssfile,SHORT_TYPE,&ssnodata, felev);
 	
-	outelev.write((long)globalxstart, (long)globalystart, (long)elevny, (long)elevnx, ss->getGridPointer());
+	outelev.write((long)globalxstart, (long)globalystart, (long)elevny, (long)elevnx, ss->getGridPointer(), ss->getGridPointerStride());
 	double writet = MPI_Wtime();
 	double dataRead, compute, write, total,temp;
         dataRead = readt-begint;

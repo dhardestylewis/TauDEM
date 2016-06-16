@@ -37,28 +37,29 @@ email:  dtarb@usu.edu
  */
 
 //  This software is distributed from http://hydrology.usu.edu/taudem/
+#ifndef LINEARPART_H
+#define LINEARPART_H
+
+#include <cassert>
+#include <cstdio>
+#include <cstdlib>
+#include <stdint.h>
+#include <cstring>
+#include <cmath>
+
+#include <queue>
+#include <limits>
+#include <vector>
+#include <memory>
+#include <iostream>
+#include <exception>
 
 #include "mpi.h"
 #include "partition.h"
 
-#include <queue>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
-#include <math.h>
-#include <limits>
-#include <vector>
-#include <iostream>
-#include <exception>
-
-#ifndef LINEARPART_H
-#define LINEARPART_H
-
 template<class datatype>
 class linearpart : public tdpartition {
 private:
-
     enum BorderType {
         LEFT_BORDER,
         RIGHT_BORDER,
@@ -85,17 +86,17 @@ protected:
     int bottomleftRank, bottomrightRank;
     int numOfNeighbours;
 
+    int rawOffsetX = 0;
+    int rawOffsetY = 0;
+    int rawWidth;
+    int rawHeight;
+
     MPI_Datatype MPI_type;
     datatype noData;
+
+    std::unique_ptr<datatype[]> rawData;
     datatype *gridData;
-    datatype *topBorder;
-    datatype *bottomBorder;
-    datatype *leftBorder;
-    datatype *rightBorder;
-    datatype *topleftBorder;
-    datatype *toprightBorder;
-    datatype *bottomleftBorder;
-    datatype *bottomrightBorder;
+
     BorderType *borderTypes;
     MPI_Datatype leftrighttype;
     MPI_Datatype topbottomtype;
@@ -138,6 +139,10 @@ public:
         return gridData;
     }
 
+    int getGridPointerStride() const {
+        return rawWidth * sizeof(datatype);
+    }
+
     bool isNodata(int x, int y) const;
     void setToNodata(int x, int y);
 
@@ -169,17 +174,6 @@ private:
 
 template<class datatype>
 linearpart<datatype>::~linearpart() {
-    delete[] gridData;
-
-    delete[] bottomBorder;
-    delete[] topBorder;
-    delete[] leftBorder;
-    delete[] rightBorder;
-    delete[] topleftBorder;
-    delete[] toprightBorder;
-    delete[] bottomleftBorder;
-    delete[] bottomrightBorder;
-
     if (gridDataBorderPointers)
         delete[] gridDataBorderPointers;
 
@@ -332,8 +326,8 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
             sizeX = std::max(firstFactor, secondFactor);
         }
     } else if (decompType == DECOMP_ROW) {
-        sizeY = size;
         sizeX = 1;
+        sizeY = size;
     } else {
         sizeX = size;
         sizeY = 1;
@@ -354,10 +348,10 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
     // get the coordinate
     MPI_Cart_coords(myComm, rank, dim, coords);
 
-    coordY = coords[0];
     coordX = coords[1];
+    coordY = coords[0];
 
-    // find the neighbours
+    // Find the neighbours
 
     // find the rank of left neighbour
     if (coordX != 0) {
@@ -437,9 +431,37 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
     nx = coordX != (sizeX - 1) ? totalx / sizeX : totalx - cx;
     ny = coordY != (sizeY - 1) ? totaly / sizeY : totaly - cy;
 
+    // Figure out the bounds needed to include borders.
+    rawWidth = nx;
+    rawHeight = ny;
+
+    // Left border
+    if (coordX > 0) {
+        rawOffsetX = 1;
+        rawWidth++;
+    }
+
+    // Right border
+    if (coordX < sizeX - 1) {
+        rawWidth++;
+    }
+
+    // Top border
+    if (coordY > 0) {
+        rawOffsetY = 1;
+        rawHeight++;
+    }
+
+    // Bottom border
+    if (coordY < sizeY - 1) {
+        rawHeight++;
+    }
+
+    //printf("rank %d @ %d %d: total %d %d n %d %d c %d %d raw %d %d %d %d\n", rank, coordX, coordY, totalx, totaly, nx, ny, cx, cy, rawOffsetX, rawOffsetY, rawWidth, rawHeight);
+
     // create vector type for left and right borders if necessary
     if (leftRank != -1 || rightRank != -1) {
-        MPI_Type_vector(ny, 1, nx, MPI_type, &leftrighttype);
+        MPI_Type_vector(ny, 1, rawWidth, MPI_type, &leftrighttype);
         MPI_Type_commit(&leftrighttype);
     }
 
@@ -449,44 +471,22 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
         MPI_Type_contiguous(nx, MPI_type, &topbottomtype);
         MPI_Type_commit(&topbottomtype);
     }
-    //Allocate memory for data and fill with noData value.  Catch exceptions
-    uint64_t prod; //   use long 64 bit number to hold the product to allocate
+    
+    // Allocate memory for data and fill with noData value.  Catch exceptionfs
+    uint64_t numPixels = (uint64_t) rawWidth * rawHeight;
+
     try {
-        prod = nx * ny;
-        gridData = new datatype[prod];
-        topBorder = new datatype[nx];
-        bottomBorder = new datatype[nx];
-        leftBorder = new datatype[ny];
-        rightBorder = new datatype[ny];
-        topleftBorder = new datatype[1];
-        toprightBorder = new datatype[1];
-        bottomleftBorder = new datatype[1];
-        bottomrightBorder = new datatype[1];
+        rawData = std::unique_ptr<datatype[]>(new datatype[numPixels]);
+        gridData = rawData.get() + rawOffsetY * rawWidth + rawOffsetX;
     } catch (std::bad_alloc &) {
         //  DGT added clause below to try trap for insufficient memory in the computer.
         fprintf(stdout, "Memory allocation error during partition initialization in process %d.\n", rank);
-        fprintf(stdout, "NCols: %ld, NRows: %ld, NCells: %ld\n", nx, ny, prod);
+        fprintf(stdout, "NCols: %ld, NRows: %ld, NCells: %ld\n", nx, ny, numPixels);
         fflush(stdout);
         MPI_Abort(MCW, -999);
     }
 
-    for (uint64_t j = 0; j < nx; j++) {
-        for (uint64_t i = 0; i < ny; i++)
-            gridData[i * nx + j] = noData;
-
-        topBorder[j] = noData;
-        bottomBorder[j] = noData;
-    }
-
-    for (uint64_t i = 0; i < ny; i++) {
-        leftBorder[i] = noData;
-        rightBorder[i] = noData;
-    }
-
-    topleftBorder[0] = noData;
-    toprightBorder[0] = noData;
-    bottomleftBorder[0] = noData;
-    bottomrightBorder[0] = noData;
+    std::fill(rawData.get(), rawData.get() + numPixels, noData);
 
     // store all pointers, mpi types and neighbour ranks
     // to be used in border-exchange operations
@@ -503,7 +503,7 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
         int neighbourIndex = 0;
         if (topRank != -1) {
             gridDataBorderPointers[neighbourIndex] = gridData;
-            borderPointers[neighbourIndex] = topBorder;
+            borderPointers[neighbourIndex] = gridData - rawWidth;
             dataTypes[neighbourIndex] = topbottomtype;
             neighbourRanks[neighbourIndex] = topRank;
             tmpBorderPointers[neighbourIndex] = new datatype[nx];
@@ -515,8 +515,8 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
         }
 
         if (bottomRank != -1) {
-            gridDataBorderPointers[neighbourIndex] = gridData + ((ny - 1) * nx);
-            borderPointers[neighbourIndex] = bottomBorder;
+            gridDataBorderPointers[neighbourIndex] = gridData + ((ny - 1) * rawWidth);
+            borderPointers[neighbourIndex] = gridData + ny * rawWidth;
             dataTypes[neighbourIndex] = topbottomtype;
             neighbourRanks[neighbourIndex] = bottomRank;
             tmpBorderPointers[neighbourIndex] = new datatype[nx];
@@ -529,7 +529,7 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
 
         if (leftRank != -1) {
             gridDataBorderPointers[neighbourIndex] = gridData;
-            borderPointers[neighbourIndex] = leftBorder;
+            borderPointers[neighbourIndex] = gridData - rawOffsetX;
             dataTypes[neighbourIndex] = leftrighttype;
             neighbourRanks[neighbourIndex] = leftRank;
             tmpBorderPointers[neighbourIndex] = new datatype[ny];
@@ -542,7 +542,7 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
 
         if (rightRank != -1) {
             gridDataBorderPointers[neighbourIndex] = gridData + nx - 1;
-            borderPointers[neighbourIndex] = rightBorder;
+            borderPointers[neighbourIndex] = gridData + nx;
             dataTypes[neighbourIndex] = leftrighttype;
             neighbourRanks[neighbourIndex] = rightRank;
             tmpBorderPointers[neighbourIndex] = new datatype[ny];
@@ -555,7 +555,7 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
 
         if (topleftRank != -1) {
             gridDataBorderPointers[neighbourIndex] = gridData;
-            borderPointers[neighbourIndex] = topleftBorder;
+            borderPointers[neighbourIndex] = gridData - rawWidth - 1;
             dataTypes[neighbourIndex] = MPI_type;
             neighbourRanks[neighbourIndex] = topleftRank;
             tmpBorderPointers[neighbourIndex] = new datatype[1];
@@ -568,7 +568,7 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
 
         if (toprightRank != -1) {
             gridDataBorderPointers[neighbourIndex] = gridData + nx - 1;
-            borderPointers[neighbourIndex] = toprightBorder;
+            borderPointers[neighbourIndex] = gridData + nx - rawWidth;
             dataTypes[neighbourIndex] = MPI_type;
             neighbourRanks[neighbourIndex] = toprightRank;
             tmpBorderPointers[neighbourIndex] = new datatype[1];
@@ -580,8 +580,8 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
         }
 
         if (bottomleftRank != -1) {
-            gridDataBorderPointers[neighbourIndex] = gridData + ((ny - 1) * nx);
-            borderPointers[neighbourIndex] = bottomleftBorder;
+            gridDataBorderPointers[neighbourIndex] = gridData + ((ny - 1) * rawWidth);
+            borderPointers[neighbourIndex] = gridData + ny * rawWidth - 1;
             dataTypes[neighbourIndex] = MPI_type;
             neighbourRanks[neighbourIndex] = bottomleftRank;
             tmpBorderPointers[neighbourIndex] = new datatype[1];
@@ -593,8 +593,8 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
         }
 
         if (bottomrightRank != -1) {
-            gridDataBorderPointers[neighbourIndex] = gridData + (ny * nx) - 1;
-            borderPointers[neighbourIndex] = bottomrightBorder;
+            gridDataBorderPointers[neighbourIndex] = gridData + (ny * rawWidth) - 1;
+            borderPointers[neighbourIndex] = gridData + ny * rawWidth;
             dataTypes[neighbourIndex] = MPI_type;
             neighbourRanks[neighbourIndex] = bottomrightRank;
             tmpBorderPointers[neighbourIndex] = new datatype[1];
@@ -614,28 +614,10 @@ bool linearpart<datatype>::isInPartition(int x, int y) const {
 //Returns true if (x,y) is in or on borders of partition
 template<class datatype>
 bool linearpart<datatype>::hasAccess(int x, int y) const {
-    //isInPartition takes care of the case where (x,y) is inside the grid
-    if (x >= 0 && x < nx && y >= 0 && y < ny) return true; // DGT reducing function nesting for efficiency
-    //	if(isInPartition(x,y)) return true;
+    x += rawOffsetX;
+    y += rawOffsetY;
 
-    //Now we only need to worry about borders.
-    if (x >= 0 && x < nx) {
-        if (topRank != -1 && y == -1) return true;
-        if (bottomRank != -1 && y == ny) return true;
-    } else if (y >= 0 && y < ny) {
-        if (leftRank != -1 && x == -1) return true;
-        if (rightRank != -1 && x == nx) return true;
-    } else if (topleftRank != -1 && x == -1 && y == -1) {
-        return true;
-    } else if (toprightRank != -1 && x == nx && y == -1) {
-        return true;
-    } else if (bottomleftRank != -1 && x == -1 && y == ny) {
-        return true;
-    } else if (bottomrightRank != -1 && x == nx && y == ny) {
-        return true;
-    }
-
-    return false;
+    return x >= 0 && x < rawWidth && y >= 0 && y < rawHeight;
 }
 
 //Shares border information between adjacent processes
@@ -647,7 +629,7 @@ void linearpart<datatype>::share() {
     MPI_Request *requests = (MPI_Request *) malloc(sizeof (MPI_Request) * numOfNeighbours * 2);
 
     for (unsigned int i = 0; i < numOfNeighbours; ++i) {
-        MPI_Irecv(borderPointers[i], borderLengths[i], MPI_type, neighbourRanks[i], 0, MCW, &requests[i]);
+        MPI_Irecv(borderPointers[i], 1, dataTypes[i], neighbourRanks[i], 0, MCW, &requests[i]);
     }
 
     for (unsigned int i = 0; i < numOfNeighbours; ++i) {
@@ -679,7 +661,7 @@ void linearpart<datatype>::passBorders() {
     }
 
     for (unsigned int i = 0; i < numOfNeighbours; ++i) {
-        MPI_Isend(borderPointers[i], borderLengths[i], MPI_type, neighbourRanks[i], 0, MCW,
+        MPI_Isend(borderPointers[i], 1, dataTypes[i], neighbourRanks[i], 0, MCW,
                 &requests[i + numOfNeighbours]);
     }
 
@@ -692,7 +674,13 @@ void linearpart<datatype>::passBorders() {
 
     // now transfer the tmp-border data to the corresponding border
     for (unsigned int i = 0; i < numOfNeighbours; ++i) {
-        memmove(borderPointers[i], tmpBorderPointers[i], borderLengths[i] * sizeof (datatype));
+        if (dataTypes[i] == leftrighttype) {
+            for (int x = 0; x < borderLengths[i]; x++) {
+                borderPointers[i][x*rawWidth] = tmpBorderPointers[i][x]; 
+            }
+        } else {
+            memmove(borderPointers[i], tmpBorderPointers[i], borderLengths[i] * sizeof(datatype));
+        }
     }
 }
 
@@ -707,70 +695,81 @@ void linearpart<datatype>::addBorders() {
     uint64_t i;
     for (i = 0; i < nx; i++) {
         //Add the values passed in from other process
-        if (isNodata(i, -1) || isNodata(i, 0))
-            setData(i, 0, noData);
-        else
-            addToData(i, 0, topBorder[i]);
+        if (hasAccess(i, -1)) {
+            if (isNodata(i, -1) || isNodata(i, 0))
+                setData(i, 0, noData);
+            else
+                addToData(i, 0, getData(i, -1));
+        }
 
-        if (isNodata(i, ny) || isNodata(i, ny - 1))
-            setData(i, ny - 1, noData);
-        else
-            addToData(i, ny - 1, bottomBorder[i]);
+        if (hasAccess(i, ny)) {
+            if (isNodata(i, ny) || isNodata(i, ny - 1))
+                setData(i, ny - 1, noData);
+            else
+                addToData(i, ny - 1, getData(i, ny));
+        }
     }
 
     for (i = 0; i < ny; i++) {
         //Add the values passed in from other process
-        if (isNodata(-1, i) || isNodata(0, i))
-            setData(0, i, noData);
-        else
-            addToData(0, i, leftBorder[i]);
+        if (hasAccess(0, i)) {
+            if (isNodata(-1, i) || isNodata(0, i))
+                setData(0, i, noData);
+            else
+                addToData(0, i, getData(-1, i));
+        }
 
-        if (isNodata(nx, i) || isNodata(nx - 1, i))
-            setData(nx - 1, i, noData);
-        else
-            addToData(nx - 1, i, rightBorder[i]);
+        if (hasAccess(nx, i)) {
+            if (isNodata(nx, i) || isNodata(nx - 1, i))
+                setData(nx - 1, i, noData);
+            else
+                addToData(nx - 1, i, getData(nx, i));
+        }
     }
 
-    if (isNodata(-1, -1) || isNodata(0, 0))
-        setData(0, 0, noData);
-    else
-        addToData(0, 0, topleftBorder[0]);
+    if (hasAccess(-1, -1)) {
+        if (isNodata(-1, -1) || isNodata(0, 0))
+            setData(0, 0, noData);
+        else
+            addToData(0, 0, getData(-1, -1));
+    }
 
-    if (isNodata(nx, -1) || isNodata(nx - 1, 0))
-        setData(nx - 1, 0, noData);
-    else
-        addToData(nx - 1, 0, toprightBorder[0]);
+    if (hasAccess(nx, -1)) {
+        if (isNodata(nx, -1) || isNodata(nx - 1, 0))
+            setData(nx - 1, 0, noData);
+        else
+            addToData(nx - 1, 0, getData(nx, -1));
+    }
 
-    if (isNodata(-1, ny) || isNodata(0, ny - 1))
-        setData(0, ny - 1, noData);
-    else
-        addToData(0, ny - 1, bottomleftBorder[0]);
-
-    if (isNodata(nx, ny) || isNodata(nx - 1, ny - 1))
-        setData(nx - 1, ny - 1, noData);
-    else
-        addToData(nx - 1, ny - 1, bottomrightBorder[0]);
+    if (hasAccess(-1, ny)) {
+        if (isNodata(-1, ny) || isNodata(0, ny - 1))
+            setData(0, ny - 1, noData);
+        else
+            addToData(0, ny - 1, getData(-1, ny));
+    }
+    
+    if (hasAccess(nx, ny)) {
+        if (isNodata(nx, ny) || isNodata(nx - 1, ny - 1))
+            setData(nx - 1, ny - 1, noData);
+        else
+            addToData(nx - 1, ny - 1, getData(nx, ny));
+    }
 }
 
 //Clears borders (sets them to zero).
 
 template<class datatype>
 void linearpart<datatype>::clearBorders() {
-    uint64_t i;
-    for (i = 0; i < nx; i++) {
-        topBorder[i] = 0;
-        bottomBorder[i] = 0;
+    for (int x = -1; x <= nx; x++) {
+
+        if (hasAccess(x, -1)) setData(x, -1, 0);
+        if (hasAccess(x, ny)) setData(x, ny, 0);
     }
 
-    for (i = 0; i < ny; i++) {
-        leftBorder[i] = 0;
-        rightBorder[i] = 0;
+    for (int y = -1; y <= ny; y++) {
+        if (hasAccess(-1, y)) setData(-1, y, 0);
+        if (hasAccess(nx, y)) setData(nx, y, 0);
     }
-
-    topleftBorder[0] = 0;
-    toprightBorder[0] = 0;
-    bottomleftBorder[0] = 0;
-    bottomrightBorder[0] = 0;
 }
 
 template<class datatype>
@@ -861,26 +860,8 @@ void linearpart<datatype>::setToNodata(int x, int y) {
 //Returns the element in the grid with coordinate (x,y).
 template<class datatype>
 datatype linearpart<datatype>::getData(int x, int y) const {
-    datatype val;
-
-    if (x >= 0 && x < nx && y >= 0 && y < ny) val = gridData[x + y * nx];
-    else if (x >= 0 && x < nx) {
-        if (y == -1) val = topBorder[x];
-        else if (y == ny) val = bottomBorder[x];
-    } else if (y >= 0 && y < ny) {
-        if (x == -1) val = leftBorder[y];
-        else if (x == nx) val = rightBorder[y];
-    } else if (x == -1 && y == -1) {
-        val = topleftBorder[0];
-    } else if (x == nx && y == -1) {
-        val = toprightBorder[0];
-    } else if (x == -1 && y == ny) {
-        val = bottomleftBorder[0];
-    } else if (x == nx && y == ny) {
-        val = bottomrightBorder[0];
-    }
-
-    return val;
+    assert(hasAccess(x, y));
+    return gridData[x + y * rawWidth];
 }
 
 // FIXME: get rid of this ugly function
@@ -915,45 +896,15 @@ void linearpart<datatype>::getdxdyc(int y, double &val_dxc, double &val_dyc) {
 //Sets the element in the grid to the specified value.
 template<class datatype>
 void linearpart<datatype>::setData(int x, int y, datatype val) {
-    //	if(isInPartition(x,y)) gridData[x+y*nx] = val;
-    if (x >= 0 && x < nx && y >= 0 && y < ny) gridData[x + y * nx] = val;
-    else if (x >= 0 && x < nx) {
-        if (y == -1) topBorder[x] = val;
-        else if (y == ny) bottomBorder[x] = val;
-    } else if (y >= 0 && y < ny) {
-        if (x == -1) leftBorder[y] = val;
-        else if (x == nx) rightBorder[y] = val;
-    } else if (x == -1 && y == -1) {
-        topleftBorder[0] = val;
-    } else if (x == nx && y == -1) {
-        toprightBorder[0] = val;
-    } else if (x == -1 && y == ny) {
-        bottomleftBorder[0] = val;
-    } else if (x == nx && y == ny) {
-        bottomrightBorder[0] = val;
-    }
+    assert(isInPartition(x, y));
+    gridData[x + y * rawWidth] = val;
 }
 
 //Increments the element in the grid by the specified value.
 template<class datatype>
 void linearpart<datatype>::addToData(int x, int y, datatype val) {
-    //	if(isInPartition(x,y)) gridData[x+y*nx] += val;
-    if (x >= 0 && x < nx && y >= 0 && y < ny) gridData[x + y * nx] += val;
-    else if (x >= 0 && x < nx) {
-        if (y == -1) topBorder[x] += val;
-        else if (y == ny) bottomBorder[x] += val;
-    } else if (y >= 0 && y < ny) {
-        if (x == -1) leftBorder[y] += val;
-        else if (x == nx) rightBorder[y] += val;
-    } else if (x == -1 && y == -1) {
-        topleftBorder[0] += val;
-    } else if (x == nx && y == -1) {
-        toprightBorder[0] += val;
-    } else if (x == -1 && y == ny) {
-        bottomleftBorder[0] += val;
-    } else if (x == nx && y == ny) {
-        bottomrightBorder[0] += val;
-    }
+    assert(isInPartition(x, y));
+    gridData[x + y * rawWidth] += val;
 }
 
 #endif
