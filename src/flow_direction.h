@@ -701,7 +701,7 @@ class AsyncRasterProcessor
 
             if (rank == 0) {
                 auto raw_comm_bytes = global_num_comms * max_border_size;
-                auto overhead = 100 - 100. * global_bytes_needed / raw_comm_bytes;
+                auto overhead = 100. * (raw_comm_bytes - global_bytes_needed) / global_bytes_needed;
 
                 printf("ASYNC: took %d border transfers - %s (used %s - overhead %.1f%%)\n", global_num_comms, humanReadableSize(raw_comm_bytes).c_str(), humanReadableSize(global_bytes_needed).c_str(), overhead);
             }
