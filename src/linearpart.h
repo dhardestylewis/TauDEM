@@ -54,7 +54,8 @@ email:  dtarb@usu.edu
 #include <iostream>
 #include <exception>
 
-#include "mpi.h"
+#include <mpi.h>
+
 #include "partition.h"
 
 template<class datatype>
@@ -164,10 +165,6 @@ public:
     bool hasBottomRightNeighbour();
 
     int getNeighbourCount();
-
-private:
-    void findClosestFactors(int number, int &firstFactor, int &secondFactor);
-
 };
 
 //Destructor.  Just frees up memory.
@@ -255,29 +252,8 @@ int linearpart<datatype>::getNeighbourCount() {
     return numOfNeighbours;
 }
 
-template<class datatype>
-void linearpart<datatype>::findClosestFactors(int number, int &firstFactor, int &secondFactor) {
-    int sroot = (int) sqrt((double) number);
-    int i = 1;
-    firstFactor = 1;
-    int mindiff = INT_MAX;
-    while (i <= number) {
-        if (number % i == 0) {
-            int diff = abs(i - sroot);
-            if (diff < mindiff) {
-                mindiff = diff;
-                firstFactor = i;
-            }
-        }
-        i++;
-    }
-
-    secondFactor = number / firstFactor;
-}
-
 //Init routine.  Takes the total number of rows and columns in the ENTIRE grid to be partitioned,
 //dx and dy for the grid, MPI datatype (should match the template declaration), and noData value.
-
 template<class datatype>
 void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double dy_in, MPI_Datatype MPIt, datatype nd) {
     MPI_Comm_rank(MCW, &rank);
@@ -529,7 +505,7 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
 
         if (leftRank != -1) {
             gridDataBorderPointers[neighbourIndex] = gridData;
-            borderPointers[neighbourIndex] = gridData - rawOffsetX;
+            borderPointers[neighbourIndex] = gridData - 1;
             dataTypes[neighbourIndex] = leftrighttype;
             neighbourRanks[neighbourIndex] = leftRank;
             tmpBorderPointers[neighbourIndex] = new datatype[ny];
@@ -593,8 +569,8 @@ void linearpart<datatype>::init(long totalx, long totaly, double dx_in, double d
         }
 
         if (bottomrightRank != -1) {
-            gridDataBorderPointers[neighbourIndex] = gridData + (ny * rawWidth) - 1;
-            borderPointers[neighbourIndex] = gridData + ny * rawWidth;
+            gridDataBorderPointers[neighbourIndex] = gridData + ((ny - 1) * rawWidth) + nx - 1;
+            borderPointers[neighbourIndex] = gridData + ny * rawWidth + nx;
             dataTypes[neighbourIndex] = MPI_type;
             neighbourRanks[neighbourIndex] = bottomrightRank;
             tmpBorderPointers[neighbourIndex] = new datatype[1];
@@ -623,7 +599,6 @@ bool linearpart<datatype>::hasAccess(int x, int y) const {
 //Shares border information between adjacent processes
 template<class datatype>
 void linearpart<datatype>::share() {
-    MPI_Status status;
     if (size <= 1) return; //if there is only one process, we're all done sharing
 
     MPI_Request *requests = (MPI_Request *) malloc(sizeof (MPI_Request) * numOfNeighbours * 2);
@@ -637,8 +612,8 @@ void linearpart<datatype>::share() {
                 &requests[i + numOfNeighbours]);
     }
 
+    // FIXME: remove
     MPI_Status *statuses = (MPI_Status *) malloc(sizeof (MPI_Status) * numOfNeighbours * 2);
-
     MPI_Waitall(numOfNeighbours * 2, requests, statuses);
 
     delete requests;
@@ -757,11 +732,9 @@ void linearpart<datatype>::addBorders() {
 }
 
 //Clears borders (sets them to zero).
-
 template<class datatype>
 void linearpart<datatype>::clearBorders() {
     for (int x = -1; x <= nx; x++) {
-
         if (hasAccess(x, -1)) setData(x, -1, 0);
         if (hasAccess(x, ny)) setData(x, ny, 0);
     }

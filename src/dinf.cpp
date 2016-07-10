@@ -205,7 +205,7 @@ int setdir( char* demfile, char* angfile, char *slopefile, char *flowfile, int u
     }
 
     if (sharedFlats > 0) {
-        SparsePartition<int> inc(nx, ny, 0);
+        SparsePartition<int> inc(totalX, totalY, 0);
         size_t lastNumFlat = resolveFlats_parallel_async<Dinf>(elevDEM, inc, flowDir, sharedIslands);
 
         if (rank==0) {
@@ -215,7 +215,7 @@ int setdir( char* demfile, char* angfile, char *slopefile, char *flowfile, int u
 
         // Repeatedly call resolve flats until there is no change across all processors
         while (lastNumFlat > 0) {
-            SparsePartition<int> newInc(nx, ny, 0);
+            SparsePartition<int> newInc(totalX, totalY, 0);
 
             lastNumFlat = resolveFlats_parallel_async<Dinf>(inc, newInc, flowDir, sharedIslands);
             inc = std::move(newInc);
@@ -229,7 +229,7 @@ int setdir( char* demfile, char* angfile, char *slopefile, char *flowfile, int u
     //t.end("Resolve shared flats");
 
     if (!localIslands.empty()) {
-        SparsePartition<int> inc(nx, ny, 0);
+        SparsePartition<int> inc(totalX, totalY, 0);
         size_t lastNumFlat = resolveFlats<Dinf>(elevDEM, inc, flowDir, localIslands);
 
         if (rank==0) {
@@ -240,7 +240,7 @@ int setdir( char* demfile, char* angfile, char *slopefile, char *flowfile, int u
         // Repeatedly call resolve flats until there is no change
         while (lastNumFlat > 0)
         {
-            SparsePartition<int> newInc(nx, ny, 0);
+            SparsePartition<int> newInc(totalX, totalY, 0);
 
             lastNumFlat = resolveFlats<Dinf>(inc, newInc, flowDir, localIslands); 
             inc = std::move(newInc);

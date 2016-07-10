@@ -47,7 +47,7 @@ email:  dtarb@usu.edu
 #include <ogr_api.h>
 
 #include "const.h"
-#include "linearpart.h"
+#include "partition.h"
 
 //  TODO adjust this for different dx and dy
 //const double aref[10] = { -atan2((double)1,(double)1), 0., -aref[0],(double)(0.5*PI),PI-aref[2],(double)PI,
@@ -70,5 +70,7 @@ void initNeighborD8up(tdpartition* neighbor,tdpartition* flowData, std::queue<no
 					  int nx,int ny,int useOutlets, int *outletsX,int *outletsY,long numOutlets); 
 
 std::string humanReadableSize(uint64_t size);
+
+void findClosestFactors(int number, int &firstFactor, int &secondFactor);
 #endif
 

@@ -8,6 +8,8 @@
 #include "linearpart.h"
 #include "sparsepartition.h"
 
+#include "arp.h"
+
 using std::vector;
 
 // Checks if cells cross
@@ -113,15 +115,37 @@ size_t propagateIncrements(linearpart<typename Algo::FlowType>& flowDir, SparseP
 }
 
 template<typename Algo>
-size_t propagateBorderIncrements_async(linearpart<typename Algo::FlowType>& flowDir, SparsePartition<int>& inc, bool top, vector<node>& changes, bool& top_updated, bool& bottom_updated)
+size_t propagateBorderIncrements_async(linearpart<typename Algo::FlowType>& flowDir, SparsePartition<int>& inc, vector<node>& changes, bool border_changed[4])
 {
     int nx = flowDir.getnx();
     int ny = flowDir.getny();
 
-    vector<node> queue;
+    vector<node> queue, newFlats;
 
     // Find the starting nodes at the edge of the raster
     int ignoredGhostCells = 0;
+
+    auto checkFlat = [&](int in, int jn, int st) {
+        if (!flowDir.isInPartition(in, jn))
+            return;
+
+        bool noFlow = !Algo::HasFlow(flowDir.getData(in, jn));
+        auto neighInc = inc.getData(in, jn);
+
+        if (noFlow && (neighInc == 0 || std::abs(neighInc) > st + 1)) {
+            // If neighbor increment is positive, we are overriding a larger increment
+            // and it is not yet in the queue
+            if (neighInc >= 0) {
+                queue.emplace_back(in, jn);
+            }
+
+            // Here we set a negative increment if it's still not set
+            //
+            // Another flat might be neighboring the same cell with a lower increment,
+            // which has to override the higher increment (that hasn't been set yet but is in the queue).
+            inc.setData(in, jn, -(st + 1));
+        }
+    };
 
     for (auto flat : changes) {
         int st = inc.getData(flat.x, flat.y);
@@ -134,38 +158,33 @@ size_t propagateBorderIncrements_async(linearpart<typename Algo::FlowType>& flow
             continue;
         }
 
+        bool y_border = flat.x == -1 || flat.x == nx;
+        bool x_border = flat.y == -1 || flat.y == ny;
+        auto in = flat.x == -1 ? 0 : nx - 1;
         auto jn = flat.y == -1 ? 0 : ny - 1;
 
-        for (auto in : {flat.x-1, flat.x, flat.x+1}) {
-            if (!flowDir.isInPartition(in, jn))
-                continue;
-
-            bool noFlow = !Algo::HasFlow(flowDir.getData(in, jn));
-            auto neighInc = inc.getData(in, jn);
-
-            if (noFlow && (neighInc == 0 || std::abs(neighInc) > st + 1)) {
-                // If neighbor increment is positive, we are overriding a larger increment
-                // and it is not yet in the queue
-                if (neighInc >= 0) {
-                    queue.emplace_back(in, jn);
-                }
-
-                // Here we set a negative increment if it's still not set
-                //
-                // Another flat might be neighboring the same cell with a lower increment,
-                // which has to override the higher increment (that hasn't been set yet but is in the queue).
-                inc.setData(in, jn, -(st + 1));
+        if (x_border && y_border) {
+            // single pixel neighbor at a corner
+            checkFlat(in, jn, st);
+        } else if (x_border) {
+            for (auto in : {flat.x - 1, flat.x, flat.x + 1}) { 
+                checkFlat(in, jn, st);
             }
+        } else if (y_border) {
+            for (auto jn : {flat.y - 1, flat.y, flat.y + 1}) { 
+                checkFlat(in, jn, st);
+            }
+        } else {
+            printf("error: received cell change not at border (%d %d)\n", flat.x, flat.y);
         }
     }
 
     if (ignoredGhostCells > 0) {
-       printf("warning: ignored %d ghost cells which were at upper limit (%d)\n", ignoredGhostCells, SHRT_MAX);
+       printf("warning: ignored %d ghost cells which were at upper limit (%d)\n", ignoredGhostCells, INT_MAX);
     }
 
     size_t numChanged = 0;
     size_t abandonedCells = 0;
-    vector<node> newFlats;
 
     while (!queue.empty()) {
         for(node flat : queue) {
@@ -182,8 +201,10 @@ size_t propagateBorderIncrements_async(linearpart<typename Algo::FlowType>& flow
             inc.setData(flat.x, flat.y, st);
             numChanged++;
 
-            if (flat.y == 0) top_updated = true;
-            if (flat.y == ny - 1) bottom_updated = true;
+            border_changed[0] |= flat.y == 0;
+            border_changed[1] |= flat.x == 0;
+            border_changed[2] |= flat.x == nx - 1;
+            border_changed[3] |= flat.y == ny - 1;
 
             if (st == INT_MAX) {
                 abandonedCells++;
@@ -365,11 +386,13 @@ int markPits(E& elev, linearpart<typename Algo::FlowType>& flowDir, vector<vecto
 template<typename Algo>
 void findIslands(linearpart<typename Algo::FlowType>& flowDir, vector<vector<node>>& localIslands, vector<vector<node>>& sharedIslands)
 {
+    int globalWidth = flowDir.gettotalx();
+    int globalHeight = flowDir.gettotaly();
     int width = flowDir.getnx();
     int height = flowDir.getny();
 
     int numIslands = 0;
-    SparsePartition<int> islandLabel(width, height, 0);
+    SparsePartition<int> islandLabel(globalWidth, globalHeight, 0);
     vector<node> q, tempVector;
 
     for (int j=0; j<height; j++) {
@@ -404,7 +427,9 @@ void findIslands(linearpart<typename Algo::FlowType>& flowDir, vector<vector<nod
                     int in = flat.x + d1[k];
                     int jn = flat.y + d2[k];
 
-                    if ((jn == -1 || jn == height) && flowDir.hasAccess(in, jn)) {
+                    bool ghostCell = (in == -1) || (in == width) || (jn == -1) || (jn == height);
+
+                    if (ghostCell && flowDir.hasAccess(in, jn)) {
                         if (!Algo::HasFlow(flowDir.getData(in, jn)))
                         {
                             shared = true;
@@ -433,9 +458,9 @@ void findIslands(linearpart<typename Algo::FlowType>& flowDir, vector<vector<nod
 template<typename Algo, typename E>
 long resolveFlats(E& elev, SparsePartition<int>& inc, linearpart<typename Algo::FlowType>& flowDir, std::vector<std::vector<node>>& islands)
 {
-    long nx = flowDir.getnx();
-    long ny = flowDir.getny();
-
+    int globalWidth = flowDir.gettotalx();
+    int globalHeight = flowDir.gettotaly();
+    
     int rank;
     MPI_Comm_rank(MCW, &rank);
     
@@ -444,7 +469,7 @@ long resolveFlats(E& elev, SparsePartition<int>& inc, linearpart<typename Algo::
         fflush(stderr);
     }
 
-    SparsePartition<int> s(nx, ny, 0);
+    SparsePartition<int> s(globalWidth, globalHeight, 0);
     
     flowTowardsLower<Algo>(elev, flowDir, islands, inc);
 
@@ -506,229 +531,17 @@ long resolveFlats(E& elev, SparsePartition<int>& inc, linearpart<typename Algo::
     return flatsRemaining;
 }
 
-class AsyncRasterProcessor
-{
-    public:
-        typedef std::function<void(bool, std::vector<node>&, bool&, bool&)> update_fn;
-
-        AsyncRasterProcessor() {
-            MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-            MPI_Comm_size(MPI_COMM_WORLD, &size);
-       
-            if (rank == 0) {
-                outstanding_updates = std::unique_ptr<int[]>(new int[size]);
-            }
-        }
-
-        void add(AsyncPartition* raster, update_fn fn) {
-            rasters.push_back(raster);
-            raster_update_fns.push_back(fn);
-        }
-
-        void run() {
-            int num_borders = rasters.size() * 2;
-
-            size_t max_border_size = 0;
-            for (auto* r : rasters) {
-                max_border_size = std::max(max_border_size, r->get_async_buf_size());
-            }
-
-            // FIXME: pick reasonable size
-            // FIXME: actually, get rid of buffered sends
-            size_t buffer_size = size * num_borders * (max_border_size + MPI_BSEND_OVERHEAD);
-            mpi_buffer = std::unique_ptr<uint8_t[]>(new uint8_t[buffer_size]);
-            MPI_Buffer_attach(mpi_buffer.get(), buffer_size);
-
-            if (rank == 0) {
-                printf("ASYNC: Allocating %s for MPI buffer\n", humanReadableSize(buffer_size).c_str());
-                std::fill(outstanding_updates.get(), outstanding_updates.get() + size, rasters.size());
-            }
-
-            // Tags:
-            //  100 - control message
-            //  101+ - borders messages
-            MPI_Request req;
-
-            // Send initial border data if it is modified (or for all cases?)
-            for (int x = 0; x < rasters.size(); x++) {
-                int tag = 101 + x;
-
-                // FIXME: send initial border only if updated
-                auto* r = rasters[x];
-
-                int updates[2] = { -1, -1 };
-
-                uint8_t* buf = (uint8_t *) r->get_async_buf();
-                int buf_size = r->get_async_buf_size();
-
-                if (rank > 0) {
-                    r->async_store_buf(true);
-
-                    bool empty = std::all_of(buf, buf + buf_size, [](uint8_t x) { return x == 0; }); 
-
-                    if (!empty) {
-                        MPI_Ibsend(buf, buf_size, MPI_BYTE, rank - 1, tag, MPI_COMM_WORLD, &req);
-                        MPI_Request_free(&req);
-
-                        updates[0] = rank - 1;
-                    }
-                }
-
-                if (rank < size - 1) {
-                    r->async_store_buf(false);
-
-                    bool empty = std::all_of(buf, buf + buf_size, [](uint8_t x) { return x == 0; }); 
-
-                    if (!empty) {
-                        MPI_Ibsend(buf, buf_size, MPI_BYTE, rank + 1, tag, MPI_COMM_WORLD, &req);
-                        MPI_Request_free(&req);
-
-                        updates[1] = rank + 1;
-                    }
-                }
-
-                MPI_Ibsend(updates, 2, MPI_INT, 0, 100, MCW, &req);
-                MPI_Request_free(&req);
-            }
-
-            std::vector<node> border_changes;
-
-            while (true) {
-                MPI_Status status;
-                int err = MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-
-                if (err != MPI_SUCCESS) {
-                    printf("MPI_Probe failed on rank %d - %d\n", rank, err);
-                }
-
-                //printf("Got message from %d tag %d\n", status.MPI_SOURCE, status.MPI_TAG);
-
-                if (status.MPI_TAG == 100) {
-                    int updates[2] = {-1, -1};
-                    MPI_Recv(updates, 2, MPI_INT, status.MPI_SOURCE, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-                    if (rank == 0) {
-                        // Process status notifications from other ranks
-                        outstanding_updates[status.MPI_SOURCE]--;
-
-                        if (updates[0] != -1) { outstanding_updates[updates[0]]++; }
-                        if (updates[1] != -1) { outstanding_updates[updates[1]]++; }
-
-                        bool done = true;
-
-                        for (int x = 0; x < size; x++) {
-                            if (outstanding_updates[x] != 0) {
-                                done = false;
-                                break;
-                            }
-                        }
-
-                        if (done) {
-                            MPI_Request req;
-                            int unused[2] = {0, 0};
-
-                            for (int x = 1; x < size; x++) {
-                                MPI_Ibsend(unused, 2, MPI_INT, x, 100, MPI_COMM_WORLD, &req);
-                                MPI_Request_free(&req);
-                            }
-
-                            break;
-                        }
-                    } else {
-                        // Root signaled global completion - we are done.
-                        break;
-                    }
-                } else if (status.MPI_TAG > 100) {
-                    // Border update
-                    total_comms++;
-                    int raster_n = (status.MPI_TAG - 101);
-                    int top = status.MPI_SOURCE + 1 == rank;
-
-                    //printf("%d: Got border upd to %d %d\n", rank, raster_n, top);
-
-                    auto* r = rasters[raster_n];
-
-                    MPI_Recv(r->get_async_buf(), r->get_async_buf_size(), MPI_BYTE,
-                            status.MPI_SOURCE, status.MPI_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-                    border_changes.clear();
-                    r->async_load_buf(top, border_changes);
-
-                    comm_bytes_needed += border_changes.size() * sizeof(int);
-
-                    bool top_modified = false, bottom_modified = false;
-                    raster_update_fns[raster_n](top, border_changes, top_modified, bottom_modified);
-
-                    int tag = 101 + raster_n;
-                    MPI_Request req;
-                    int updates[2] = { -1, -1 };
-
-                    // Top neighbor exists
-                    if (rank != 0 && top_modified) {
-                        r->async_store_buf(true);
-                        MPI_Ibsend(r->get_async_buf(), r->get_async_buf_size(), MPI_BYTE, rank - 1, tag, MPI_COMM_WORLD, &req);
-                        MPI_Request_free(&req);
-
-                        updates[0] = rank - 1;
-                    }
-
-                    // Bottom neighbor exists
-                    if (rank != size - 1 && bottom_modified) {
-                        r->async_store_buf(false);
-                        MPI_Ibsend(r->get_async_buf(), r->get_async_buf_size(), MPI_BYTE, rank + 1, tag, MPI_COMM_WORLD, &req);
-                        MPI_Request_free(&req);
-
-                        updates[1] = rank + 1;
-                    }
-
-                    MPI_Ibsend(updates, 2, MPI_INT, 0, 100, MCW, &req);
-                    MPI_Request_free(&req);
-                } else {
-                    printf("%d: unrecognized tag %d from %d\n", rank, status.MPI_TAG, status.MPI_SOURCE);
-                }
-            }
-
-            // Detach our MPI buffer
-            void* buf_addr;
-            int buf_size;
-            MPI_Buffer_detach(&buf_addr, &buf_size);
-
-            int global_num_comms = 0;
-            int global_bytes_needed = 0;
-            
-            MPI_Reduce(&total_comms, &global_num_comms, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-            MPI_Reduce(&comm_bytes_needed, &global_bytes_needed, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
-
-            if (rank == 0) {
-                auto raw_comm_bytes = global_num_comms * max_border_size;
-                auto overhead = 100. * (raw_comm_bytes - global_bytes_needed) / global_bytes_needed;
-
-                printf("ASYNC: took %d border transfers - %s (used %s - overhead %.1f%%)\n", global_num_comms, humanReadableSize(raw_comm_bytes).c_str(), humanReadableSize(global_bytes_needed).c_str(), overhead);
-            }
-        }
-
-    private:
-        int rank, size;
-        int total_comms = 0;
-        int comm_bytes_needed = 0;
-
-        std::unique_ptr<uint8_t[]> mpi_buffer;
-        std::unique_ptr<int[]> outstanding_updates;
-
-        vector<AsyncPartition*> rasters;
-        vector<update_fn> raster_update_fns;
-};
-
 template<typename Algo, typename E>
 long resolveFlats_parallel_async(E& elev, SparsePartition<int>& inc, linearpart<typename Algo::FlowType>& flowDir, vector<vector<node>>& islands)
 {
-    int nx = flowDir.getnx();
-    int ny = flowDir.getny();
-
+    int globalWidth = flowDir.gettotalx();
+    int globalHeight = flowDir.gettotaly();
+    
+    
     int rank;
     MPI_Comm_rank(MCW, &rank);
 
-    SparsePartition<int> higherGradient(nx, ny, 0);
+    SparsePartition<int> higherGradient(globalWidth, globalHeight, 0);
 
     flowTowardsLower<Algo>(elev, flowDir, islands, inc);
     flowFromHigher<Algo>(elev, flowDir, islands, higherGradient);
@@ -736,16 +549,16 @@ long resolveFlats_parallel_async(E& elev, SparsePartition<int>& inc, linearpart<
     {
         AsyncRasterProcessor arp;
 
-        arp.add(&inc, [&flowDir, &inc](bool new_top, std::vector<node>& border_diff, bool& top_updated, bool& bottom_updated) {
+        arp.add(&inc, [&flowDir, &inc](std::vector<node>& border_diff, bool borders_updated[4]) {
             //printf("rank %d: got low gradient update - %d cells\n", rank, border_diff.size());
 
-            propagateBorderIncrements_async<Algo>(flowDir, inc, new_top, border_diff, top_updated, bottom_updated);
+            propagateBorderIncrements_async<Algo>(flowDir, inc, border_diff, borders_updated);
         });
 
-        arp.add(&higherGradient, [&flowDir, &higherGradient](bool new_top, std::vector<node>& border_diff, bool& top_updated, bool& bottom_updated) {
+        arp.add(&higherGradient, [&flowDir, &higherGradient](std::vector<node>& border_diff, bool borders_updated[4]) {
             //printf("rank %d: got high gradient update - %d cells\n", rank, border_diff.size());
 
-            propagateBorderIncrements_async<Algo>(flowDir, higherGradient, new_top, border_diff, top_updated, bottom_updated);
+            propagateBorderIncrements_async<Algo>(flowDir, higherGradient, border_diff, borders_updated);
         });
 
         arp.run();

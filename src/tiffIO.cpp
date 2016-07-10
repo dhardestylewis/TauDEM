@@ -147,13 +147,9 @@ tiffIO::tiffIO(char *fname, DATA_TYPE newtype) {
         }
     }
 
-
-
-
-    //dxA=(dxc[totalY/2]<0.0) ? -dxc[totalY/2] : dxc[totalY/2] ;   //abs(dxc[totalY/2]);  //  DGT This is ugly but we encountered a compiler that the abs function rounded the results which introduced a bug
-    //dyA=(dyc[totalY/2]<0.0) ? -dyc[totalY/2] : dyc[totalY/2] ;  //abs(dyc[totalY/2]);
     dxA = fabs(dxc[totalY / 2]);
     dyA = fabs(dyc[totalY / 2]);
+
     datatype = newtype;
     if (datatype == SHORT_TYPE) {
         nodata = new short;
@@ -310,6 +306,7 @@ void tiffIO::write(long xstart, long ystart, long numRows, long numCols, void* s
         partition_filename[strlen(partition_filename) - 4] = '\0';
         strcat(partition_filename, partition_ext);
 
+        papszOptions = CSLSetNameValue(papszOptions, "TILED", "YES");
         papszOptions = CSLSetNameValue(papszOptions, "COMPRESS", compression_meth[0]);
 
         int cellbytes = 4;
@@ -373,6 +370,7 @@ void tiffIO::write(long xstart, long ystart, long numRows, long numCols, void* s
             }
             // Set options
             if (index == 0) { // for .tif files.  Refer to http://www.gdal.org/frmt_gtiff.html for GTiff options.
+                papszOptions = CSLSetNameValue(papszOptions, "TILED", "YES");
                 papszOptions = CSLSetNameValue(papszOptions, "COMPRESS", compression_meth[index]);
             } else if (index == 1) { // .img files.  Refer to http://www.gdal.org/frmt_hfa.html where COMPRESSED = YES are create options for ERDAS .img files
                 papszOptions = CSLSetNameValue(papszOptions, "COMPRESSED", compression_meth[index]);
@@ -492,7 +490,7 @@ void tiffIO::geotoLength(double dlon, double dlat, double lat, double *xyc) {
     beta = atan(boa * tan(lat));
     dbeta = dlat * boa * (cos(beta) / cos(lat))*(cos(beta) / cos(lat));
     ds2 = (pow(elipa * sin(beta), 2) + pow(elipb * cos(beta), 2)) * pow(dbeta, 2);
-    xyc[0] = elipa * cos(beta) * abs(dlon);
+    xyc[0] = elipa * cos(beta) * fabs(dlon);
     xyc[1] = double(sqrt(double(ds2)));
 }
 
@@ -506,15 +504,15 @@ bool tiffIO::compareTiff(const tiffIO &comp) {
         printf("Rows do not match: %d %d\n", totalY, comp.totalY);
         return false;
     }
-    if (abs(dxA - comp.dxA) > tol) {
+    if (fabs(dxA - comp.dxA) > tol) {
         printf("dx does not match: %lf %lf\n", dxA, comp.dxA);
         return false;
     }
-    if (abs(dyA - comp.dyA) > tol) {
+    if (fabs(dyA - comp.dyA) > tol) {
         printf("dy does not match: %lf %lf\n", dyA, comp.dyA);
         return false;
     }
-    if (abs(xleftedge - comp.xleftedge) > 0.0) {
+    if (fabs(xleftedge - comp.xleftedge) > 0.0) {
         if (rank == 0) {
             printf("Warning! Left edge does not match exactly:\n");
             printf(" %lf in file %s\n", xleftedge, filename);
@@ -522,7 +520,7 @@ bool tiffIO::compareTiff(const tiffIO &comp) {
         }
         //return false;  //DGT decided to relax this to a warning as some TIFF files seem to use center or corner to reference edges in a way not understood 
     }
-    if (abs(ytopedge - comp.ytopedge) > 0.0) {
+    if (fabs(ytopedge - comp.ytopedge) > 0.0) {
         if (rank == 0) {
             printf("Warning! Top edge does not match exactly:\n");
             printf(" %lf in file %s\n", ytopedge, filename);

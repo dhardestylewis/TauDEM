@@ -47,7 +47,8 @@ email:  dtarb@usu.edu
 #include <cinttypes>
 #include <queue>
 
-#include "commonLib.h"
+#include "const.h"
+#include "partition.h"
 
 using std::queue;
 
@@ -1000,4 +1001,24 @@ std::string humanReadableSize(uint64_t size)
     result.append("0");
 
     return result;
+}
+
+void findClosestFactors(int number, int &firstFactor, int &secondFactor) {
+    int sroot = (int) sqrt((double) number);
+    int i = 1;
+    firstFactor = 1;
+    int mindiff = INT_MAX;
+
+    while (i <= number) {
+        if (number % i == 0) {
+            int diff = abs(i - sroot);
+            if (diff < mindiff) {
+                mindiff = diff;
+                firstFactor = i;
+            }
+        }
+        i++;
+    }
+
+    secondFactor = number / firstFactor;
 }

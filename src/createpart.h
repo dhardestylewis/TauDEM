@@ -41,9 +41,8 @@ email:  dtarb@usu.edu
 #ifndef CREATEPART_H
 #define CREATEPART_H
 
-#include "commonLib.h"
-//#include "partition.h"
-//#include "linearpart.h"
+#include "partition.h"
+#include "linearpart.h"
 
 tdpartition *CreateNewPartition(DATA_TYPE datatype, long totalx, long totaly, double dxA, double dyA, void* nodata){
 	//Currently, this just creates a new linear partition
