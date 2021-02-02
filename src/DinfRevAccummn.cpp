@@ -45,7 +45,6 @@ email:  dtarb@usu.edu
 #include "commonLib.h"
 #include "tardemlib.h"
 
-DecompType tdpartition::decompType = DECOMP_BLOCK;
 
 int main(int argc,char **argv)
 {
@@ -100,24 +99,6 @@ int main(int argc,char **argv)
 			}
 			else goto errexit;
 		}
-                else if(strcmp(argv[i],"-ddm")==0)
-		{
-			i++;
-			if(argc > i)
-			{
-				if(strcmp(argv[i],"row")==0) {
-                                    tdpartition::decompType = DECOMP_ROW;
-                                } else if (strcmp(argv[i],"column")==0) {
-                                    tdpartition::decompType = DECOMP_COLUMN;
-                                } else if (strcmp(argv[i],"block")==0) {
-                                    tdpartition::decompType = DECOMP_BLOCK;
-                                } else {
-                                    goto errexit;
-                                }
-				i++;
-			}
-			else goto errexit;
-		}
 		else if(strcmp(argv[i],"-dmax")==0)
 		{
 			i++;
@@ -147,13 +128,12 @@ int main(int argc,char **argv)
 	errexit:
 	   printf("Simple Usage:\n %s <basefilename>\n",argv[0]);
 	   printf("Usage with specific file names:\n %s -ang <angfile>\n",argv[0]);
-       printf("-wg <wgfile> -racc <depfile> -dmax <maxfile> [-ddm <ddm>]\n");
+       printf("-wg <wgfile> -racc <depfile> -dmax <maxfile>\n");
 	   printf("<basefilename> is the name of the raw digital elevation model\n");
 	   printf("<angfile> is the D-infinity flow direction input file.\n");
 	   printf("<wgfile> is the input weight grid file.\n");
 	   printf("<depfile> is the output reverse accumulation grid file.\n");
 	   printf("<maxfile> is the output maximum downslope grid file.\n");
-           printf("<ddm> is the data decomposition method. Either \"row\", \"column\" or \"block\".\n");
 	   printf("The following are appended to the file names\n");
        printf("before the files are opened:\n");
        printf("ang    D-infinity flow direction input file\n");

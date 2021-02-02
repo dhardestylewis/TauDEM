@@ -47,7 +47,6 @@ email:  dtarb@usu.edu
 #include "tardemlib.h"
 #include "streamnet.h"
 
-DecompType tdpartition::decompType = DECOMP_ROW;
 
 int main(int argc,char **argv)
 {
@@ -168,7 +167,7 @@ int main(int argc,char **argv)
 			i++;
 			if(argc > i)
 			{
-				sscanf(argv[i],"%ld",&lyrno);
+				sscanf(argv[i],"%d",&lyrno);
 				i++;											
 			}
 			else goto errexit;

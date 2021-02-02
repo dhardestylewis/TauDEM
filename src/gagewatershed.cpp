@@ -138,7 +138,7 @@ int gagewatershed( char *pfile, char *wfile, char* datasrc,char* lyrname,int use
 	int ny = flowData->getny();
 	int xstart, ystart;
 	flowData->localToGlobal(0, 0, xstart, ystart);
-	p.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
+	p.read(xstart, ystart, ny, nx, flowData->getGridPointer());
 	//printf("Pfile read");  fflush(stdout);
 
 	//Begin timer
@@ -309,7 +309,7 @@ int gagewatershed( char *pfile, char *wfile, char* datasrc,char* lyrname,int use
 	//Create and write TIFF file
 	long lNodata = MISSINGLONG;
 	tiffIO wshedIO(wfile, LONG_TYPE, &lNodata, p);
-	wshedIO.write(xstart, ystart, ny, nx, wshed->getGridPointer(), wshed->getGridPointerStride());
+	wshedIO.write(xstart, ystart, ny, nx, wshed->getGridPointer());
 
 	double writet = MPI_Wtime();
 	if( rank == 0) 

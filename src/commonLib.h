@@ -47,7 +47,7 @@ email:  dtarb@usu.edu
 #include <ogr_api.h>
 
 #include "const.h"
-#include "partition.h"
+#include "linearpart.h"
 
 //  TODO adjust this for different dx and dy
 //const double aref[10] = { -atan2((double)1,(double)1), 0., -aref[0],(double)(0.5*PI),PI-aref[2],(double)PI,
@@ -55,8 +55,7 @@ email:  dtarb@usu.edu
 
 int nameadd(char* full, char* arg, const char* suff);
 double prop(float a, int k, double dx1 , double dy1);
-std::string getLayername(std::string input_path);
-
+char *getLayername(char *inputogrfile);
 const char *getOGRdrivername(char *datasrcnew);
 void getlayerfail(OGRDataSourceH hDS1,char * outletsds, int outletslyr);
 int readoutlets(char *outletsds,char *lyrname,int uselayername, int outletslyr, OGRSpatialReferenceH hSRSRaster, int *noutlets, double*& x, double*& y);
@@ -70,7 +69,5 @@ void initNeighborD8up(tdpartition* neighbor,tdpartition* flowData, std::queue<no
 					  int nx,int ny,int useOutlets, int *outletsX,int *outletsY,long numOutlets); 
 
 std::string humanReadableSize(uint64_t size);
-
-void findClosestFactors(int number, int &firstFactor, int &secondFactor);
 #endif
 

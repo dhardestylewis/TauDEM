@@ -79,13 +79,13 @@ int twigrid(char *slopefile,char *areafile,char *twifile)
 	int ny = slpData->getny();
 	int xstart, ystart;
 	slpData->localToGlobal(0, 0, xstart, ystart);
-	slp.read(xstart, ystart, ny, nx, slpData->getGridPointer(), slpData->getGridPointerStride());
+	slp.read(xstart, ystart, ny, nx, slpData->getGridPointer());
 
 	tdpartition *scaData;
 	tiffIO sca(areafile, FLOAT_TYPE);
 	if(!slp.compareTiff(sca)) return 1;  //And maybe an unhappy error message
 	scaData = CreateNewPartition(sca.getDatatype(), totalX, totalY, dxA, dyA, sca.getNodata());
-	sca.read(xstart, ystart, scaData->getny(), scaData->getnx(), scaData->getGridPointer(), scaData->getGridPointerStride());
+	sca.read(xstart, ystart, scaData->getny(), scaData->getnx(), scaData->getGridPointer());
 	
 	//Begin timer
 	begin = MPI_Wtime();
@@ -144,7 +144,7 @@ int twigrid(char *slopefile,char *areafile,char *twifile)
 	float aNodata = -1.0f;
 	char prefix[5] = "twi";
 	tiffIO sarr(twifile, FLOAT_TYPE, &aNodata, slp);
-	sarr.write(xstart, ystart, ny, nx, sar->getGridPointer(), sar->getGridPointerStride());
+	sarr.write(xstart, ystart, ny, nx, sar->getGridPointer());
 
 	//Brackets force MPI-dependent objects to go out of scope before Finalize is called
 	}MPI_Finalize();

@@ -132,9 +132,9 @@ class tiffIO{
 
 		//BT void read(unsigned long long xstart, unsigned long long ystart, unsigned long long numRows, unsigned long long numCols, void* dest);
 		//BT void write(unsigned long long xstart, unsigned long long ystart, unsigned long long numRows, unsigned long long numCols, void* source);
-		void read(long xstart, long ystart, long numRows, long numCols, void* dest, int destStride=0);
-		void write(long xstart, long ystart, long numRows, long numCols, void* source, int sourceStride=0);
-
+		void read(long xstart, long ystart, long numRows, long numCols, void* dest);
+		void write(long xstart, long ystart, long numRows, long numCols, void* source);
+		
 		bool compareTiff(const tiffIO &comp);
 				
 		//void geoToGlobalXY(double geoX, double geoY, unsigned long long &globalX, unsigned long long &globalY);

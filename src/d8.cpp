@@ -57,19 +57,6 @@ email:  dtarb@usu.edu
 
 double **fact;
 
-struct D8 {
-    typedef short FlowType;
-
-    static bool HasFlow(FlowType x) {
-        return x != 0;
-    }
-
-    template<typename E>
-    static void SetFlow(int x, int y, linearpart<FlowType>& flowDir, E& elev, SparsePartition<int>& inc) {
-        setFlow2(x, y, flowDir, elev, inc);
-    }
-};
-
 //Set positive flowdirections of elevDEM
 void setFlow(int i, int j, linearpart<short>& flowDir, linearpart<float>& elevDEM)
 {
@@ -78,13 +65,11 @@ void setFlow(int i, int j, linearpart<short>& flowDir, linearpart<float>& elevDE
     float smax=0;
 
     float elev = elevDEM.getData(i, j);
-    
-    // fixme: return instead of checking isNodata
 
     for (short k=1; k<=8 && !flowDir.isNodata(i,j); k+=2) {
         in=i+d1[k];
         jn=j+d2[k];
-        
+
         float slope = fact[j][k] * (elev - elevDEM.getData(in,jn));
 
         if (slope > smax) {
@@ -105,7 +90,7 @@ void setFlow(int i, int j, linearpart<short>& flowDir, linearpart<float>& elevDE
 
         float slope = fact[j][k] * (elev - elevDEM.getData(in,jn));
 
-        if (slope > smax && !cellsCross(k,i,j,flowDir)) {
+        if (slope > smax && dontCross(k,i,j,flowDir)==0) {
             smax = slope;
             short dirnb = flowDir.getData(in,jn);
 
@@ -154,19 +139,12 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
 
     if (rank==0) {
         printf("D8FlowDir version %s\n",TDVERSION);
-
-        if (strlen(pointfile) == 0) {
-            printf("WARNING: no output p file specified\n");
-        }
-
-        if (strlen(slopefile) == 0) {
-            printf("WARNING: no output sd8 file specified\n");
-        }
-
         fflush(stdout);
     }
 
     MPITimer t;
+
+    double begint = MPI_Wtime();
 
     t.start("Total");
     t.start("Header read");
@@ -189,6 +167,8 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
 
     t.end("Header read");
 
+    double headert = MPI_Wtime();
+
     if (rank==0) {
         float timeestimate=(2.8e-9*pow((double)(totalX*totalY),1.55)/pow((double) size,0.65))/60+1;  // Time estimate in minutes
         //fprintf(stderr,"%d %d %d\n",totalX,totalY,size);
@@ -204,7 +184,7 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
 
     t.start("Data read");
 
-    dem.read(xstart, ystart, ny, nx, elevDEM.getGridPointer(), elevDEM.getGridPointerStride());
+    dem.read(xstart, ystart, ny, nx, elevDEM.getGridPointer());
     elevDEM.share();
     double data_read_time = t.end("Data read");
    
@@ -247,8 +227,6 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
     t.start("Calculate flow directions");
     uint64_t numFlat = setPosDir(elevDEM, flowDir);
     t.end("Calculate flow directions");
-  
-    flowDir.share();
 
     if (strlen(slopefile) > 0)
     {
@@ -264,9 +242,11 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
 
         t.start("Write slope");
         tiffIO slopeIO(slopefile, FLOAT_TYPE, &slopeNodata, dem);
-        slopeIO.write(xstart, ystart, ny, nx, slope.getGridPointer(), slope.getGridPointerStride());
+        slopeIO.write(xstart, ystart, ny, nx, slope.getGridPointer());
         t.end("Write slope");
     }
+
+    flowDir.share();
 
     uint64_t totalNumFlat = 0;
     MPI_Allreduce(&numFlat, &totalNumFlat, 1, MPI_UINT64_T, MPI_SUM, MCW);
@@ -279,20 +259,89 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
     t.start("Resolve flats");
 
     if (totalNumFlat > 0) {
+        std::vector<node> flats;
+
+        t.start("Add flats");
+
+        // FIXME: Should do this during slope calculation
+        for (int j=0; j<ny; j++) {
+            for (int i=0; i<nx; i++) {
+                if (flowDir.getData(i,j)==0) {
+                    flats.push_back(node(i, j));
+                }
+            }
+        }
+
+        t.end("Add flats");
+
         if (rank == 0) {
             fprintf(stderr, "Finding flat islands...\n");
         }
 
+        double flatFindStart = MPI_Wtime();
+        int numIslands = 0;
+
         std::vector<std::vector<node>> islands;
-        std::vector<std::vector<node>> borderingIslands;
+        std::set<int> bordering_island_labels;
 
         t.start("Find islands");
-        findIslands<D8>(flowDir, islands, borderingIslands);
+        {
+            SparsePartition<int> island_marker(nx, ny, 0);
+            std::vector<node> q;
+
+            for(node flat : flats)
+            {
+                if (island_marker.getData(flat.x, flat.y) != 0) {
+                    continue;
+                }
+
+                q.push_back(flat);
+
+                int label = ++numIslands;
+                islands.push_back(std::vector<node>());
+
+                while(!q.empty()) {
+                    node flat = q.back();
+                    q.pop_back();
+
+                    if (island_marker.getData(flat.x, flat.y) != 0) {
+                        continue;
+                    }
+
+                    island_marker.setData(flat.x, flat.y, label);
+                    islands[label - 1].push_back(flat);
+
+                    for (int k=1; k<=8; k++) {
+                        //if neighbor is in flat
+                        int in = flat.x + d1[k];
+                        int jn = flat.y + d2[k];
+
+                        if ((jn == -1 || jn == ny) && flowDir.hasAccess(in, jn)) {
+                            if (flowDir.getData(in, jn) == 0)
+                            {
+                                bordering_island_labels.insert(label);
+                            }
+                        }
+
+                        if (!flowDir.isInPartition(in, jn))
+                            continue;
+
+                        if (flowDir.getData(in, jn) == 0)
+                            q.push_back(node(in, jn));
+                    }
+                }
+            }
+        }
         t.end("Find islands");
 
+        std::vector<std::vector<node>> borderingIslands;
         uint64_t localSharedFlats = 0, sharedFlats = 0;
-        for (auto& island : borderingIslands) {
-            localSharedFlats += island.size();
+
+        for (auto& label : bordering_island_labels) {
+            std::vector<node> island = std::move(islands[label - 1]);
+
+            localSharedFlats += island.size(); 
+            borderingIslands.push_back(island);
         }
 
         t.start("Resolve shared flats");
@@ -300,14 +349,12 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
 
         if (rank == 0 && size > 1) {
             fprintf(stderr, "Processing partial flats\n");
-
-            printf("PRL: %llu flats shared across processors (%llu local -> %.2f%% shared)\n",
-                    sharedFlats, totalNumFlat - sharedFlats, 100. * sharedFlats / totalNumFlat);
+            printf("PRL: %llu flats shared across processors (%llu local -> %.2f%% shared)\n", sharedFlats, totalNumFlat - sharedFlats, 100. * sharedFlats / totalNumFlat);
         }
 
         if (sharedFlats > 0) {
-            SparsePartition<int> inc(totalX, totalY, 0);
-            size_t lastNumFlat = resolveFlats_parallel_async<D8>(elevDEM, inc, flowDir, borderingIslands);
+            SparsePartition<int> inc(nx, ny, 0);
+            size_t lastNumFlat = resolveFlats_parallel(elevDEM, inc, flowDir, borderingIslands);
 
             if (rank==0) {
                 fprintf(stderr, "PRL: Iteration complete. Number of flats remaining: %zu\n", lastNumFlat);
@@ -316,9 +363,9 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
 
             // Repeatedly call resolve flats until there is no change across all processors
             while (lastNumFlat > 0) {
-                SparsePartition<int> newInc(totalX, totalY, 0);
+                SparsePartition<int> newInc(nx, ny, 0);
 
-                lastNumFlat = resolveFlats_parallel_async<D8>(inc, newInc, flowDir, borderingIslands);
+                lastNumFlat = resolveFlats_parallel(inc, newInc, flowDir, borderingIslands); 
                 inc = std::move(newInc);
 
                 if (rank==0) {
@@ -334,8 +381,8 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
 
         t.start("Resolve local flats");
         if (!islands.empty()) {
-            SparsePartition<int> inc(totalX, totalY, 0);
-            size_t lastNumFlat = resolveFlats<D8>(elevDEM, inc, flowDir, islands);
+            SparsePartition<int> inc(nx, ny, 0);
+            size_t lastNumFlat = resolveFlats(elevDEM, inc, flowDir, islands);
 
             if (rank==0) {
                 fprintf(stderr, "Iteration complete. Number of flats remaining: %zu\n\n", lastNumFlat);
@@ -345,9 +392,9 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
             // Repeatedly call resolve flats until there is no change
             while (lastNumFlat > 0)
             {
-                SparsePartition<int> newInc(totalX, totalY, 0);
+                SparsePartition<int> newInc(nx, ny, 0);
 
-                lastNumFlat = resolveFlats<D8>(inc, newInc, flowDir, islands); 
+                lastNumFlat = resolveFlats(inc, newInc, flowDir, islands); 
                 inc = std::move(newInc);
 
                 if (rank==0) {
@@ -361,12 +408,10 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
 
     t.end("Resolve flats");
 
-    if (strlen(pointfile) > 0) {
-        t.start("Write directions");
-        tiffIO pointIO(pointfile, SHORT_TYPE, &flowDirNodata, dem);
-        pointIO.write(xstart, ystart, ny, nx, flowDir.getGridPointer(), flowDir.getGridPointerStride());
-        t.end("Write directions");
-    }
+    t.start("Write directions");
+    tiffIO pointIO(pointfile, SHORT_TYPE, &flowDirNodata, dem);
+    pointIO.write(xstart, ystart, ny, nx, flowDir.getGridPointer());
+    t.end("Write directions");
 
     t.end("Total");
     t.stop();
@@ -378,13 +423,13 @@ int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, in
 
 // Sets only flowDir only where there is a positive slope
 // Returns number of cells which are flat
-int setPosDir(linearpart<float>& elevDEM, linearpart<short>& flowDir)
+long setPosDir(linearpart<float>& elevDEM, linearpart<short>& flowDir)
 {
     double dxA = elevDEM.getdxA();
     double dyA = elevDEM.getdyA();
-    int nx = elevDEM.getnx();
-    int ny = elevDEM.getny();
-    int numFlat = 0;
+    long nx = elevDEM.getnx();
+    long ny = elevDEM.getny();
+    long numFlat = 0;
 
     double tempdxc, tempdyc;
 
@@ -401,7 +446,7 @@ int setPosDir(linearpart<float>& elevDEM, linearpart<short>& flowDir)
     }
 
     for (int j = 0; j < ny; j++) {
-        for (int i=0; i < nx; i++) {
+        for (int i=0; i < nx; i++ ) {
             //FlowDir is nodata if it is on the border OR elevDEM has no data
             if (elevDEM.isNodata(i,j) || !elevDEM.hasAccess(i-1,j) || !elevDEM.hasAccess(i+1,j) ||
                     !elevDEM.hasAccess(i,j-1) || !elevDEM.hasAccess(i,j+1)) {
@@ -458,7 +503,7 @@ void setFlow2(int i, int j, linearpart<short>& flowDir, T& elev, SparsePartition
 
     float slopeMax = 0;
 
-    for (short k : order) {
+    for (int k : order) {
         int in = i+d1[k];
         int jn = j+d2[k];
 
@@ -468,7 +513,6 @@ void setFlow2(int i, int j, linearpart<short>& flowDir, T& elev, SparsePartition
         if (inc.getData(in, jn) > 0) {
             // Neighbor is in flat
             float slope = fact[j][k]*(inc.getData(i, j) - inc.getData(in, jn));
-
             if (slope > slopeMax) {
                 flowDir.setData(i, j, k);
                 slopeMax = slope;

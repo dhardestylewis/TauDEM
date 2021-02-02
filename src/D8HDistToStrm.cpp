@@ -95,7 +95,7 @@ MPI_Init(NULL,NULL);
 	int xstart, ystart;
 	p->localToGlobal(0, 0, xstart, ystart);
 	p->savedxdyc(pf);
-	pf.read(xstart, ystart, ny, nx, p->getGridPointer(), p->getGridPointerStride());
+	pf.read(xstart, ystart, ny, nx, p->getGridPointer());
 
  	//Read src file
 	tdpartition *src;
@@ -106,7 +106,7 @@ MPI_Init(NULL,NULL);
 		return 1;  //And maybe an unhappy error message
 	}
 	src = CreateNewPartition(srcf.getDatatype(), totalX, totalY, dxA, dyA, srcf.getNodata());
-	srcf.read(xstart, ystart, ny, nx, src->getGridPointer(), src->getGridPointerStride());
+	srcf.read(xstart, ystart, ny, nx, src->getGridPointer());
 
 	//Record time reading files
 	double readt = MPI_Wtime();
@@ -229,7 +229,7 @@ MPI_Init(NULL,NULL);
 	//Create and write TIFF file
 	float aNodata = MISSINGFLOAT;
 	tiffIO a(distfile, FLOAT_TYPE, &aNodata, pf);
-	a.write(xstart, ystart, ny, nx, fdarr->getGridPointer(), fdarr->getGridPointerStride());
+	a.write(xstart, ystart, ny, nx, fdarr->getGridPointer());
 	double writet = MPI_Wtime();
         double dataRead, compute, write, total,tempd;
         dataRead = readt-begint;

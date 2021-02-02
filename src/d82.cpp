@@ -1,4 +1,4 @@
-/*  TauDEM DinfFlowDir function to compute flow direction based on dinf flow model.
+/*  TauDEM D8FlowDir function to compute flow direction based on d8 flow model.
 
   David G Tarboton, Dan Watson, Jeremy Neff
   Utah State University
@@ -43,7 +43,6 @@ email:  dtarb@usu.edu
 #include <cinttypes>
 #include <set>
 #include <vector>
-#include <math.h>
 
 #include <mpi.h>
 
@@ -55,24 +54,20 @@ email:  dtarb@usu.edu
 
 #include "mpitimer.h"
 
-using namespace std;
+template<typename T> long resolveFlats(T& elev, SparsePartition<int>& inc, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands);
+template<typename T> long resolveFlats_parallel(T& elevDEM, SparsePartition<int>& inc, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands);
 
-template<typename T> long resolveFlats(T& elev, SparsePartition<int>& inc, linearpart<float>& flowDir, std::vector<std::vector<node>>& islands, linearpart<float>& orelevDir);
-template<typename T> long resolveFlats_parallel(T& elevDEM, SparsePartition<int>& inc, linearpart<float>& flowDir, std::vector<std::vector<node>>& islands, linearpart<float>& orelevDir);
+template<typename T> void flowTowardsLower(T& elev, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc);
+template<typename T> void flowFromHigher(T& elevDEM, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc);
+template<typename T> int markPits(T& elevDEM, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc);
 
-template<typename T> void flowTowardsLower(T& elev, linearpart<float>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc);
-template<typename T> void flowFromHigher(T& elevDEM, linearpart<float>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc);
-template<typename T> int markPits(T& elevDEM, linearpart<float>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc);
-
-size_t propagateIncrements(linearpart<float>& flowDir, SparsePartition<int>& inc, std::vector<node>& queue);
-size_t propagateBorderIncrements(linearpart<float>& flowDir, SparsePartition<int>& inc);
+size_t propagateIncrements(linearpart<short>& flowDir, SparsePartition<int>& inc, std::vector<node>& queue);
+size_t propagateBorderIncrements(linearpart<short>& flowDir, SparsePartition<int>& inc);
 
 double **fact;
 
-long setPosDirDinf(linearpart<float>& elevDEM, linearpart<float>& flowDir, linearpart<float>& slope, int useflowfile);
-
 //Checks if cells cross
-int dontCross(int k, int i, int j, linearpart<float>& flowDir)
+int dontCross(int k, int i, int j, linearpart<short>& flowDir)
 {
     long in1, jn1, in2, jn2;
     int n1, c1, n2, c2;
@@ -119,8 +114,79 @@ int dontCross(int k, int i, int j, linearpart<float>& flowDir)
     return 0;
 }
 
+//Set positive flowdirections of elevDEM
+void setFlow(int i, int j, linearpart<short>& flowDir, linearpart<float>& elevDEM)
+{
+    int in,jn;
+    int amax=0;
+    float smax=0;
+
+    float elev = elevDEM.getData(i, j);
+
+    for (short k=1; k<=8 && !flowDir.isNodata(i,j); k+=2) {
+        in=i+d1[k];
+        jn=j+d2[k];
+
+        float slope = fact[j][k] * (elev - elevDEM.getData(in,jn));
+
+        if (slope > smax) {
+            smax=slope;
+            short dirnb=flowDir.getData(in,jn);
+
+            if (dirnb > 0 && abs(dirnb-k) == 4) {
+                flowDir.setToNodata(i,j);
+            } else {
+                flowDir.setData(i,j,k);
+            }
+        }
+    }
+
+    for (short k=2; k<=8 && !flowDir.isNodata(i,j); k+=2) {
+        in=i+d1[k];
+        jn=j+d2[k];
+
+        float slope = fact[j][k] * (elev - elevDEM.getData(in,jn));
+
+        if (slope > smax && dontCross(k,i,j,flowDir)==0) {
+            smax = slope;
+            short dirnb = flowDir.getData(in,jn);
+
+            if (dirnb > 0 && abs(dirnb-k) == 4) { 
+                flowDir.setToNodata(i,j);
+            } else {
+                flowDir.setData(i,j,k);
+            }
+        }
+    }
+}
+
+//Calculate the slope information of flowDir to slope
+void calcSlope(linearpart<short>& flowDir, linearpart<float>& elevDEM, linearpart<float>& slope)
+{
+    int nx = elevDEM.getnx();
+    int ny = elevDEM.getny();
+
+    for (int j=0; j < ny; j++) {
+        for (int i=0; i < nx; i++) {
+            // If i,j is on the border or flowDir has no data, set slope(i,j) to slopeNoData
+            if (flowDir.isNodata(i,j) || !flowDir.hasAccess(i-1,j) || !flowDir.hasAccess(i+1,j) ||
+                    !flowDir.hasAccess(i,j-1) || !flowDir.hasAccess(i,j+1)) {
+                slope.setToNodata(i, j);
+            } else {
+                short flowDirection = flowDir.getData(i,j);
+  
+                int in = i + d1[flowDirection];
+                int jn = j + d2[flowDirection];
+
+                float elevDiff = elevDEM.getData(i,j) - elevDEM.getData(in,jn);
+                slope.setData(i,j, elevDiff*fact[j][flowDirection]);
+            }
+        }
+    }
+}
+
 //Open files, Initialize grid memory, makes function calls to set flowDir, slope, and resolvflats, writes files
-int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int useflowfile)
+int setdird8(char* demfile, char* pointfile, char *slopefile, char *flowfile, int useflowfile)
 {
     MPI_Init(NULL,NULL);
 
@@ -129,7 +195,7 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
     MPI_Comm_size(MCW,&size);
 
     if (rank==0) {
-        printf("DinfFlowDir version %s\n",TDVERSION);
+        printf("D8FlowDir version %s\n",TDVERSION);
         fflush(stdout);
     }
 
@@ -184,20 +250,52 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
     }
 
     //Creates empty partition to store new flow direction
-    float flowDirNodata = MISSINGFLOAT;
+    short flowDirNodata = MISSINGSHORT;
 
-    linearpart<float> flowDir(totalX, totalY, dx, dy, MPI_FLOAT, flowDirNodata);
+    linearpart<short> flowDir(totalX, totalY, dx, dy, MPI_SHORT, flowDirNodata);
+
+    //If using a flowfile, read it in
+    if (useflowfile == 1) {
+        tiffIO flow(flowfile, SHORT_TYPE);
+
+        linearpart<short> imposedflow(flow.getTotalX(), flow.getTotalY(),
+                flow.getdxA(), flow.getdyA(), MPI_SHORT, *(short*) flow.getNodata());
+
+        if (!dem.compareTiff(flow)) {
+            printf("Error using imposed flow file.\n");
+            return 1;
+        }
+
+        for (int j=0; j < elevDEM.getny(); j++) {
+            for (int i=0; i < elevDEM.getnx(); i++ ) {
+                short data = imposedflow.getData(i,j);
+
+                if (imposedflow.isNodata(i,j) || !imposedflow.hasAccess(i-1,j) || !imposedflow.hasAccess(i+1,j) ||
+                        !imposedflow.hasAccess(i,j-1) || !imposedflow.hasAccess(i,j+1)) {
+                    //Do nothing
+                } else if (data > 0 && data <= 8) {
+                    flowDir.setData(i,j,data);
+                }
+            }
+        }
+    }
 
     if (rank == 0) fprintf(stderr, "Calculating flow directions... ");
     t.start("Calculate flow directions");
-    uint64_t numFlat;
+    uint64_t numFlat = setPosDir(elevDEM, flowDir);
+    t.end("Calculate flow directions");
+
+    if (strlen(slopefile) > 0)
     {
-        t.start("Calculate flow directions");
+        t.start("Calculate slope");
+        
+        //Creates empty partition to store new slopes
         float slopeNodata = -1.0f;
         linearpart<float> slope(totalX, totalY, dx, dy, MPI_FLOAT, slopeNodata);
 
-        numFlat = setPosDirDinf(elevDEM, flowDir, slope, useflowfile);
-        t.end("Calculate flow directions");
+        calcSlope(flowDir, elevDEM, slope);
+
+        t.end("Calculate slope");
 
         t.start("Write slope");
         tiffIO slopeIO(slopefile, FLOAT_TYPE, &slopeNodata, dem);
@@ -225,7 +323,7 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
         // FIXME: Should do this during slope calculation
         for (int j=0; j<ny; j++) {
             for (int i=0; i<nx; i++) {
-                if (flowDir.getData(i, j) == -1) {
+                if (flowDir.getData(i,j)==0) {
                     flats.push_back(node(i, j));
                 }
             }
@@ -276,7 +374,7 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
                         int jn = flat.y + d2[k];
 
                         if ((jn == -1 || jn == ny) && flowDir.hasAccess(in, jn)) {
-                            if (flowDir.getData(in, jn) == -1) 
+                            if (flowDir.getData(in, jn) == 0)
                             {
                                 bordering_island_labels.insert(label);
                             }
@@ -285,7 +383,7 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
                         if (!flowDir.isInPartition(in, jn))
                             continue;
 
-                        if (flowDir.getData(in, jn) == -1)
+                        if (flowDir.getData(in, jn) == 0)
                             q.push_back(node(in, jn));
                     }
                 }
@@ -313,7 +411,7 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
 
         if (sharedFlats > 0) {
             SparsePartition<int> inc(nx, ny, 0);
-            size_t lastNumFlat = resolveFlats_parallel(elevDEM, inc, flowDir, borderingIslands, elevDEM);
+            size_t lastNumFlat = resolveFlats_parallel(elevDEM, inc, flowDir, borderingIslands);
 
             if (rank==0) {
                 fprintf(stderr, "PRL: Iteration complete. Number of flats remaining: %zu\n", lastNumFlat);
@@ -324,7 +422,7 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
             while (lastNumFlat > 0) {
                 SparsePartition<int> newInc(nx, ny, 0);
 
-                lastNumFlat = resolveFlats_parallel(inc, newInc, flowDir, borderingIslands, elevDEM);
+                lastNumFlat = resolveFlats_parallel(inc, newInc, flowDir, borderingIslands); 
                 inc = std::move(newInc);
 
                 if (rank==0) {
@@ -341,7 +439,7 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
         t.start("Resolve local flats");
         if (!islands.empty()) {
             SparsePartition<int> inc(nx, ny, 0);
-            size_t lastNumFlat = resolveFlats(elevDEM, inc, flowDir, islands, elevDEM);
+            size_t lastNumFlat = resolveFlats(elevDEM, inc, flowDir, islands);
 
             if (rank==0) {
                 fprintf(stderr, "Iteration complete. Number of flats remaining: %zu\n\n", lastNumFlat);
@@ -353,7 +451,7 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
             {
                 SparsePartition<int> newInc(nx, ny, 0);
 
-                lastNumFlat = resolveFlats(inc, newInc, flowDir, islands, elevDEM);
+                lastNumFlat = resolveFlats(inc, newInc, flowDir, islands); 
                 inc = std::move(newInc);
 
                 if (rank==0) {
@@ -368,7 +466,7 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
     t.end("Resolve flats");
 
     t.start("Write directions");
-    tiffIO pointIO(pointfile, FLOAT_TYPE, &flowDirNodata, dem);
+    tiffIO pointIO(pointfile, SHORT_TYPE, &flowDirNodata, dem);
     pointIO.write(xstart, ystart, ny, nx, flowDir.getGridPointer());
     t.end("Write directions");
 
@@ -380,290 +478,119 @@ int setdir(char* demfile, char* pointfile, char *slopefile, char *flowfile, int 
     return 0;
 }
 
-void VSLOPE(float E0, float E1, float E2,
-        float D1, float D2, float DD,
-        float *S, float *A) {
-    //SUBROUTINE TO RETURN THE SLOPE AND ANGLE ASSOCIATED WITH A DEM PANEL 
-    float S1, S2, AD;
-    if (D1 != 0)
-        S1 = (E0 - E1) / D1;
-    if (D2 != 0)
-        S2 = (E1 - E2) / D2;
-
-    if (S2 == 0 && S1 == 0) *A = 0;
-    else
-        *A = (float) atan2(S2, S1);
-    AD = (float) atan2(D2, D1);
-    if (*A < 0.) {
-        *A = 0.;
-        *S = S1;
-    } else if (*A > AD) {
-        *A = AD;
-        *S = (E0 - E2) / DD;
-    } else
-        *S = (float) sqrt(S1 * S1 + S2 * S2);
-}
 // Sets only flowDir only where there is a positive slope
 // Returns number of cells which are flat
-
-void SET2(int I, int J, float *DXX, float DD, linearpart<float>& elevDEM, linearpart<float>& flowDir, linearpart<float>& slope) {
-    double dxA = elevDEM.getdxA();
-    double dyA = elevDEM.getdyA();
-    float SK[9];
-    float ANGLE[9];
-    float SMAX;
-    float tempFloat;
-    int K;
-    int KD;
-
-    int ID1[] = {0, 1, 2, 2, 1, 1, 2, 2, 1};
-    int ID2[] = {0, 2, 1, 1, 2, 2, 1, 1, 2};
-    int I1[] = {0, 0, -1, -1, 0, 0, 1, 1, 0};
-    int I2[] = {0, -1, -1, -1, -1, 1, 1, 1, 1};
-    int J1[] = {0, 1, 0, 0, -1, -1, 0, 0, 1};
-    int J2[] = {0, 1, 1, -1, -1, -1, -1, 1, 1};
-    float ANGC[] = {0, 0., 1., 1., 2., 2., 3., 3., 4.};
-    float ANGF[] = {0, 1., -1., 1., -1., 1., -1., 1., -1.};
-
-
-    for (K = 1; K <= 8; K++) {
-        VSLOPE(
-                elevDEM.getData(J, I, tempFloat), //felevg.d[J][I],
-                elevDEM.getData(J + J1[K], I + I1[K], tempFloat), //[felevg.d[J+J1[K]][I+I1[K]],
-                elevDEM.getData(J + J2[K], I + I2[K], tempFloat), //felevg.d[J+J2[K]][I+I2[K]],
-                DXX[ID1[K]],
-                DXX[ID2[K]],
-                DD,
-                &SK[K],
-                &ANGLE[K]
-                );
-    }
-    tempFloat = -1;
-    SMAX = 0.;
-    KD = 0;
-    flowDir.setData(J, I, tempFloat); //USE -1 TO INDICATE DIRECTION NOT YET SET 
-    for (K = 1; K <= 8; K++) {
-        if (SK[K] > SMAX) {
-            SMAX = SK[K];
-            KD = K;
-        }
-    }
-
-    if (KD > 0) {
-        tempFloat = (float) (ANGC[KD]*(PI / 2) + ANGF[KD] * ANGLE[KD]);
-        flowDir.setData(J, I, tempFloat); //set to angle
-    }
-    slope.setData(J, I, SMAX);
-}
-
-template<typename T> 
-void SET2(int I, int J, float *DXX, float DD, T& elevDEM, SparsePartition<int>& elev2, linearpart<float>& flowDir) {
-    float SK[9];
-    float ANGLE[9];
-    float SMAX = 0.0;
-    float tempFloat;
-    int tempShort, tempShort1, tempShort2;
-    int K;
-    int KD = 0;
-
-    int ID1[] = {0, 1, 2, 2, 1, 1, 2, 2, 1};
-    int ID2[] = {0, 2, 1, 1, 2, 2, 1, 1, 2};
-    int I1[] = {0, 0, -1, -1, 0, 0, 1, 1, 0};
-    int I2[] = {0, -1, -1, -1, -1, 1, 1, 1, 1};
-    int J1[] = {0, 1, 0, 0, -1, -1, 0, 0, 1};
-    int J2[] = {0, 1, 1, -1, -1, -1, -1, 1, 1};
-    float ANGC[] = {0, 0., 1., 1., 2., 2., 3., 3., 4.};
-    float ANGF[] = {0, 1., -1., 1., -1., 1., -1., 1., -1.};
-    bool diagOutFound = false;  
-
-    for (K = 1; K <= 8; K++) {
-        tempShort1 = elev2.getData(J + J1[K], I + I1[K]);
-        tempShort2 = elev2.getData(J + J2[K], I + I2[K]);
-        
-        if (tempShort1 <= 0 && tempShort2 <= 0) { //Both E1 and E2 are outside the flat get slope and angle
-            float a = elevDEM.getData(J, I);
-            float b = elevDEM.getData(J + J1[K], I + I1[K]);
-            float c = elevDEM.getData(J + J2[K], I + I2[K]);
-            VSLOPE(
-                    a, //E0
-                    b, //E1
-                    c, //E2
-                    DXX[ID1[K]], //dx or dy depending on ID1
-                    DXX[ID2[K]], //dx or dy depending on ID2
-                    DD, //Hypotenuse
-                    &SK[K], //Slope Returned
-                    &ANGLE[K]//Angle Returned
-                    );
-            if (SK[K] >= 0.0) //  Found an outlet
-            {
-                if (b > a) // Outlet found had better be a diagonal, because it is not an edge
-                {
-                    if (!diagOutFound) {
-                        diagOutFound = true;
-                        KD = K;
-                    }
-                } else { //  Here it is an adjacent outlet
-                    KD = K;
-                    break;
-                }
-            }
-
-        } else if (tempShort1 <= 0 && tempShort2 > 0) {//E1 is outside of the flat and E2 is inside the flat. Use DEM elevations. tempShort2/E2 is in the artificial grid
-            float a = elevDEM.getData(J, I);
-            float b = elevDEM.getData(J + J1[K], I + I1[K]);
-
-            if (a >= b) {
-                ANGLE[K] = 0.0;
-                SK[K] = 0.0;
-                KD = K;
-                break;
-            }
-            int a1 = elev2.getData(J, I);
-            int c1 = elev2.getData(J + J2[K], I + I2[K]);
-            int b1 = max(a1, c1);
-            VSLOPE(
-                    (float) a1, //felevg.d[J][I],
-                    (float) b1, //[felevg.d[J+J1[K]][I+I1[K]],
-                    (float) c1, //felevg.d[J+J2[K]][I+I2[K]],
-                    DXX[ID1[K]], //dx or dy
-                    DXX[ID2[K]], //dx or dy
-                    DD, //Hypotenuse
-                    &SK[K], //Slope Returned
-                    &ANGLE[K]//Angle Reutnred
-                    );
-            if (SK[K] > SMAX) {
-                SMAX = SK[K];
-                KD = K;
-            }
-        } else if (tempShort1 > 0 && tempShort2 <= 0) {//E2 is out side of the flat and E1 is inside the flat, use DEM elevations
-            float a = elevDEM.getData(J, I);
-            //float b=elevDEM->getData(J+J1[K],I+I1[K],tempFloat);
-            float c = elevDEM.getData(J + J2[K], I + I2[K]);
-            if (a >= c) {
-                if (!diagOutFound) {
-                    ANGLE[K] = (float) atan2(DXX[ID2[K]], DXX[ID1[K]]);
-                    SK[K] = 0.0;
-                    KD = K;
-                    diagOutFound = true;
-                }
-            } else {
-                int a1 = elev2.getData(J, I);
-                int b1 = elev2.getData(J + J1[K], I + I1[K]);
-                int c1 = max(a1, b1);
-                VSLOPE(
-                        (float) a1, //felevg.d[J][I],
-                        (float) b1, //[felevg.d[J+J1[K]][I+I1[K]],
-                        (float) c1, //felevg.d[J+J2[K]][I+I2[K]],
-                        DXX[ID1[K]], //dx or dy
-                        DXX[ID2[K]], //dx or dy
-                        DD, //Hypotenuse
-                        &SK[K], //Slope Returned
-                        &ANGLE[K]//Angle Reutnred
-                        );
-                if (SK[K] > SMAX) {
-                    SMAX = SK[K];
-                    KD = K;
-                }
-
-            }
-        } else {//Both E1 and E2 are in the flat. Use artificial elevation to get slope and angle
-            int a, b, c;
-            a = elev2.getData(J, I);
-            b = elev2.getData(J + J1[K], I + I1[K]);
-            c = elev2.getData(J + J2[K], I + I2[K]);
-            VSLOPE(
-                    (float) a, //felevg.d[J][I],
-                    (float) b, //[felevg.d[J+J1[K]][I+I1[K]],
-                    (float) c, //felevg.d[J+J2[K]][I+I2[K]],
-                    DXX[ID1[K]], //dx or dy
-                    DXX[ID2[K]], //dx or dy
-                    DD, //Hypotenuse
-                    &SK[K], //Slope Returned
-                    &ANGLE[K]//Angle Reutnred
-                    );
-            if (SK[K] > SMAX) {
-                SMAX = SK[K];
-                KD = K;
-            }
-        }
-    }
-    //USE -1 TO INDICATE DIRECTION NOT YET SET, 
-    // but only for non pit grid cells.  Pits will have flowDir as no data
-    if (!flowDir.isNodata(J, I)) {
-        tempFloat = -1;
-        flowDir.setData(J, I, tempFloat);
-    }
-
-    if (KD > 0)//We have a flow direction.  Calculate the Angle and save/write it.
-    {
-        tempFloat = (float) (ANGC[KD]*(PI / 2) + ANGF[KD] * ANGLE[KD]); //Calculate the Angle
-        if (tempFloat >= 0.0)//Make sure the angle is positive
-            flowDir.setData(J, I, tempFloat); //set the angle in the flowPartition
-    }
-}
-
-//int setPosDirDinf(tdpartition *elevDEM, tdpartition *flowDir, tdpartition *slope, tdpartition *area, int useflowfile)
-
-long setPosDirDinf(linearpart<float>& elevDEM, linearpart<float>& flowDir, linearpart<float>& slope, int useflowfile) {
+long setPosDir(linearpart<float>& elevDEM, linearpart<short>& flowDir)
+{
     double dxA = elevDEM.getdxA();
     double dyA = elevDEM.getdyA();
     long nx = elevDEM.getnx();
     long ny = elevDEM.getny();
-    float tempFloat;
-    double tempdxc, tempdyc;
-    int i, j, k, in, jn, con;
     long numFlat = 0;
 
-    tempFloat = 0;
-    for (j = 0; j < ny; j++) {
-        for (i = 0; i < nx; i++) {
+    double tempdxc, tempdyc;
 
+    fact = new double*[ny]; // initialize 2d array by Nazmus 2/16
 
+    for(int m = 0; m<ny; m++)
+        fact[m] = new double[9];
+
+    for (int m = 0; m<ny; m++) {
+        for (int k = 1; k <= 8; k++) {
+            elevDEM.getdxdyc(m, tempdxc, tempdyc);
+            fact[m][k] = (double) (1./sqrt(d1[k]*d1[k]*tempdxc*tempdxc + d2[k]*d2[k]*tempdyc*tempdyc));
+        }
+    }
+
+    for (int j = 0; j < ny; j++) {
+        for (int i=0; i < nx; i++ ) {
             //FlowDir is nodata if it is on the border OR elevDEM has no data
-            if (elevDEM.isNodata(i, j) || !elevDEM.hasAccess(i - 1, j) || !elevDEM.hasAccess(i + 1, j) ||
-                    !elevDEM.hasAccess(i, j - 1) || !elevDEM.hasAccess(i, j + 1)) {
-                //do nothing			
-            } else {
-                //Check if cell is "contaminated" (neighbors have no data)
-                //  set flowDir to noData if contaminated
-                con = 0;
-                for (k = 1; k <= 8 && con != -1; k++) {
-                    in = i + d1[k];
-                    jn = j + d2[k];
-                    if (elevDEM.isNodata(in, jn)) con = -1;
+            if (elevDEM.isNodata(i,j) || !elevDEM.hasAccess(i-1,j) || !elevDEM.hasAccess(i+1,j) ||
+                    !elevDEM.hasAccess(i,j-1) || !elevDEM.hasAccess(i,j+1)) {
+                //do nothing
+                continue;
+            }
+
+            //Check if cell is "contaminated" (neighbors have no data)
+            //  set flowDir to noData if contaminated
+            bool contaminated = false;
+            for (int k=1; k<=8; k++) {
+                int in=i+d1[k];
+                int jn=j+d2[k];
+
+                if (elevDEM.isNodata(in,jn)) {
+                    contaminated = true;
+                    break;
                 }
-                if (con == -1) 
-                    flowDir.setToNodata(i, j);
-                    //If cell is not contaminated,
-                else {
-                    tempFloat = -1.;
-                    flowDir.setData(i, j, tempFloat); //set to -1
-                    elevDEM.getdxdyc(j, tempdxc, tempdyc);
+            }
 
+            if (contaminated) {
+                flowDir.setToNodata(i,j);
+            } else {
+                // If cell is not contaminated,
+                flowDir.setData(i, j, 0);
+                setFlow(i,j, flowDir, elevDEM);
 
-                    float DXX[3] = {0, tempdxc, tempdyc}; //tardemlib.cpp ln 1291
-                    float DD = sqrt(tempdxc * tempdxc + tempdyc * tempdyc); //tardemlib.cpp ln 1293
-                    SET2(j, i, DXX, DD, elevDEM, flowDir, slope); //i=y in function form old code j is x switched on purpose
-                    //  Use SET2 from serial code here modified to get what it has as felevg.d from elevDEM partition
-                    //  Modify to return 0 if there is a 0 slope.  Modify SET2 to output flowDIR as no data (do nothing 
-                    //  if verified initialization to nodata) and 
-                    //  slope as 0 if a positive slope is not found
-
-                    //setFlow( i,j, flowDir, elevDEM, area, useflowfile);
-                    if (flowDir.getData(i, j, tempFloat) == -1)
-                        numFlat++;
+                if (flowDir.getData(i,j) == 0) {
+                    numFlat++;
                 }
             }
         }
     }
+
     return numFlat;
 }
 
+// Function to set flow direction based on incremented artificial elevations
+template<typename T>
+void setFlow2(int i, int j, linearpart<short>& flowDir, T& elev, SparsePartition<int>& inc)
+{
+    /*  This function sets directions based upon secondary elevations for
+      assignment of flow directions across flats according to Garbrecht and Martz
+      scheme.  There are two possibilities:
+    	A.  The neighbor is outside the flat set
+    	B.  The neighbor is in the flat set.
+    	In the case of A the input elevations are used and if a draining neighbor is found it is selected.
+    	Case B requires slope to be positive.  Remaining flats are removed by iterating this process
+    */
+    int nx = flowDir.getnx();
+    int ny = flowDir.getny();
+
+    const short order[8]= {1,3,5,7,2,4,6,8};
+
+    float slopeMax = 0;
+
+    for (int k : order) {
+        int in = i+d1[k];
+        int jn = j+d2[k];
+
+        if (!flowDir.hasAccess(in, jn))
+            continue;
+
+        if (inc.getData(in, jn) > 0) {
+            // Neighbor is in flat
+            float slope = fact[j][k]*(inc.getData(i, j) - inc.getData(in, jn));
+            if (slope > slopeMax) {
+                flowDir.setData(i, j, k);
+                slopeMax = slope;
+            }
+        } else {
+            // Neighbor is not in flat
+            auto ed = elev.getData(i, j) - elev.getData(in, jn);
+
+            if (ed >= 0) {
+                // Found a way out - this is outlet
+                flowDir.setData(i, j, k);
+                break;  
+            }
+        }
+    }
+}
 
 //************************************************************************
 
 template<typename T>
-void flowTowardsLower(T& elev, linearpart<float>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc)
+void flowTowardsLower(T& elev, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc)
 {
     long nx = flowDir.getnx();
     long ny = flowDir.getny();
@@ -684,12 +611,12 @@ void flowTowardsLower(T& elev, linearpart<float>& flowDir, std::vector<std::vect
                         continue;
 
                     auto elevDiff = flatElev - elev.getData(in,jn);
-                    float flow = flowDir.getData(in, jn);
-
+                    short flow = flowDir.getData(in,jn);
+                    
                     bool edgeDrain = flowDir.isNodata(in, jn);
 
                     // Adjacent cell drains and is equal or lower in elevation so this is a low boundary
-                    if ((elevDiff >= 0 && flow >= 0.0) || edgeDrain) {
+                    if ((elevDiff >= 0 && flow > 0) || edgeDrain) {
                         lowBoundaries.push_back(flat);
                         inc.setData(flat.x, flat.y, -1);
 
@@ -712,7 +639,7 @@ void flowTowardsLower(T& elev, linearpart<float>& flowDir, std::vector<std::vect
 }
 
 template<typename T>
-void flowFromHigher(T& elev, linearpart<float>& flowDir, std::vector<std::vector<node>>&islands, SparsePartition<int>& inc) 
+void flowFromHigher(T& elev, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc)
 {
     long nx = flowDir.getnx();
     long ny = flowDir.getny();
@@ -754,7 +681,7 @@ void flowFromHigher(T& elev, linearpart<float>& flowDir, std::vector<std::vector
 }
 
 template<typename T>
-int markPits(T& elevDEM, linearpart<float>& flowDir, std::vector<std::vector<node>>&islands, SparsePartition<int>& inc) 
+int markPits(T& elevDEM, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands, SparsePartition<int>& inc)
 {
     int nx = flowDir.getnx();
     int ny = flowDir.getny();
@@ -775,13 +702,13 @@ int markPits(T& elevDEM, linearpart<float>& flowDir, std::vector<std::vector<nod
                         continue;
 
                     auto elevDiff = elevDEM.getData(flat.x, flat.y) - elevDEM.getData(in, jn);
-                    float flow = flowDir.getData(in, jn);
-
+                    short flow = flowDir.getData(in,jn);
+                    
                     // Adjacent cell drains and is equal or lower in elevation so this is a low boundary
-                    if (elevDiff >= 0 && flow == -1) {
+                    if (elevDiff >= 0 && flow > 0) {
                         skip = true;
                         break;
-                    } else if (flow == -1) {
+                    } else if (flow == 0) {
                         // If neighbor is in flat
 
                         // FIXME: check if this is correct
@@ -805,7 +732,7 @@ int markPits(T& elevDEM, linearpart<float>& flowDir, std::vector<std::vector<nod
 }
 
 template<typename T>
-long resolveFlats(T& elevDEM, SparsePartition<int>& inc, linearpart<float>& flowDir, std::vector<std::vector<node>>&islands, linearpart<float>& orelevDir) 
+long resolveFlats(T& elevDEM, SparsePartition<int>& inc, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands)
 {
     long nx = flowDir.getnx();
     long ny = flowDir.getny();
@@ -852,23 +779,17 @@ long resolveFlats(T& elevDEM, SparsePartition<int>& inc, linearpart<float>& flow
     }
 
     long flatsRemaining = 0;
-    double tempdxc, tempdyc;
     for (auto& island : islands) {
         for (node flat : island) {
-            //setFlow2(flat.x, flat.y, flowDir, elevDEM, inc);
-            orelevDir.getdxdyc(flat.y, tempdxc, tempdyc);
-            float DXX[3] = {0, tempdxc, tempdyc}; //tardemlib.cpp ln 1291
-            float DD = sqrt(tempdxc * tempdxc + tempdyc * tempdyc); //tardemlib.cpp ln 1293
+            setFlow2(flat.x, flat.y, flowDir, elevDEM, inc);
 
-            SET2(flat.y, flat.x, DXX, DD, elevDEM, inc, flowDir);
-
-            if (flowDir.getData(flat.x, flat.y) == -1) {
+            if (flowDir.getData(flat.x, flat.y) == 0) {
                 flatsRemaining++;
             }
         }
     }
 
-    auto hasFlowDirection = [&](const node& n) { return flowDir.getData(n.x, n.y) != -1; };
+    auto hasFlowDirection = [&](const node& n) { return flowDir.getData(n.x, n.y) != 0; };
     auto isEmpty = [&](const std::vector<node>& i) { return i.empty(); };
     
     // Remove flats which have flow direction set
@@ -883,7 +804,7 @@ long resolveFlats(T& elevDEM, SparsePartition<int>& inc, linearpart<float>& flow
 }
 
 template<typename T>
-long resolveFlats_parallel(T& elev, SparsePartition<int>& inc, linearpart<float>& flowDir, std::vector<std::vector<node>>&islands, linearpart<float>& orelevDir) 
+long resolveFlats_parallel(T& elev, SparsePartition<int>& inc, linearpart<short>& flowDir, std::vector<std::vector<node>>& islands)
 {
     int nx = flowDir.getnx();
     int ny = flowDir.getny();
@@ -973,18 +894,12 @@ long resolveFlats_parallel(T& elev, SparsePartition<int>& inc, linearpart<float>
     }
 
     uint64_t localFlatsRemaining = 0, globalFlatsRemaining = 0;
-    double tempdxc, tempdyc;
-    
+
     for (auto& island : islands) {
         for (node flat : island) {
-            //setFlow2(flat.x, flat.y, flowDir, elev, inc);
-            orelevDir.getdxdyc(flat.y, tempdxc, tempdyc);
-            float DXX[3] = {0, tempdxc, tempdyc}; //tardemlib.cpp ln 1291
-            float DD = sqrt(tempdxc * tempdxc + tempdyc * tempdyc); //tardemlib.cpp ln 1293
-
-            SET2(flat.y, flat.x, DXX, DD, elev, inc, flowDir);
-            
-            if (flowDir.getData(flat.x, flat.y) == -1) {
+            setFlow2(flat.x, flat.y, flowDir, elev, inc);
+    
+            if (flowDir.getData(flat.x, flat.y) == 0) {
                 localFlatsRemaining++;
             }
         }
@@ -993,7 +908,7 @@ long resolveFlats_parallel(T& elev, SparsePartition<int>& inc, linearpart<float>
     flowDir.share();
     MPI_Allreduce(&localFlatsRemaining, &globalFlatsRemaining, 1, MPI_UINT64_T, MPI_SUM, MCW);
 
-    auto hasFlowDirection = [&](const node& n) { return flowDir.getData(n.x, n.y) != -1; };
+    auto hasFlowDirection = [&](const node& n) { return flowDir.getData(n.x, n.y) != 0; };
     auto isEmpty = [&](const std::vector<node>& i) { return i.empty(); };
     
     // Remove flats which have flow direction set
@@ -1007,7 +922,7 @@ long resolveFlats_parallel(T& elev, SparsePartition<int>& inc, linearpart<float>
     return globalFlatsRemaining;
 }
 
-size_t propagateIncrements(linearpart<float>& flowDir, SparsePartition<int>& inc, std::vector<node>& queue) {
+size_t propagateIncrements(linearpart<short>& flowDir, SparsePartition<int>& inc, std::vector<node>& queue) {
     size_t numInc = 0;
     int st = 1;
     
@@ -1026,9 +941,9 @@ size_t propagateIncrements(linearpart<float>& flowDir, SparsePartition<int>& inc
                     if (!flowDir.isInPartition(in, jn)) 
                         continue;
 
-                    float flow = flowDir.getData(in, jn);
+                    short flow = flowDir.getData(in,jn);
 
-                    if (flow == -1 && inc.getData(in, jn) == 0) {
+                    if (flow == 0 && inc.getData(in, jn) == 0) {
                         newFlats.push_back(node(in, jn));
                         inc.setData(in, jn, -1);
                     }
@@ -1051,7 +966,7 @@ size_t propagateIncrements(linearpart<float>& flowDir, SparsePartition<int>& inc
     return numInc;
 }
 
-size_t propagateBorderIncrements(linearpart<float>& flowDir, SparsePartition<int>& inc) 
+size_t propagateBorderIncrements(linearpart<short>& flowDir, SparsePartition<int>& inc)
 {
     int nx = flowDir.getnx();
     int ny = flowDir.getny();
@@ -1081,7 +996,7 @@ size_t propagateBorderIncrements(linearpart<float>& flowDir, SparsePartition<int
                 if (!flowDir.isInPartition(in, jn))
                     continue;
 
-                bool noFlow = flowDir.getData(in, jn) == -1;
+                bool noFlow = flowDir.getData(in, jn) == 0;
                 auto neighInc = inc.getData(in, jn);
 
                 if (noFlow && (neighInc == 0 || std::abs(neighInc) > st + 1)) {
@@ -1138,10 +1053,10 @@ size_t propagateBorderIncrements(linearpart<float>& flowDir, SparsePartition<int
                     if (!flowDir.isInPartition(in, jn)) 
                         continue;
 
-                    float flow = flowDir.getData(in, jn);
+                    short flow = flowDir.getData(in, jn);
                     auto neighInc = inc.getData(in, jn);
 
-                    if (flow == -1 && (neighInc == 0 || std::abs(neighInc) > st + 1)) {
+                    if (flow == 0 && (neighInc == 0 || std::abs(neighInc) > st + 1)) {
                         // If neighbor increment is positive, we are overriding a larger increment
                         // and it is not yet in the queue
                         if (neighInc >= 0) {

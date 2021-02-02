@@ -46,7 +46,6 @@ email:  dtarb@usu.edu
 #include "commonLib.h"
 #include "tardemlib.h"
 
-DecompType tdpartition::decompType = DECOMP_BLOCK;
 
 int main(int argc,char **argv)
 {
@@ -81,24 +80,7 @@ int main(int argc,char **argv)
 			}
 			else goto errexit;
 		}
-                else if(strcmp(argv[i],"-ddm")==0)
-		{
-			i++;
-			if(argc > i)
-			{
-				if(strcmp(argv[i],"row")==0) {
-                                    tdpartition::decompType = DECOMP_ROW;
-                                } else if (strcmp(argv[i],"column")==0) {
-                                    tdpartition::decompType = DECOMP_COLUMN;
-                                } else if (strcmp(argv[i],"block")==0) {
-                                    tdpartition::decompType = DECOMP_BLOCK;
-                                } else {
-                                    goto errexit;
-                                }
-				i++;
-			}
-			else goto errexit;
-		}
+
 
 		   else if(strcmp(argv[i],"-lyrno")==0)
 		{
@@ -157,12 +139,11 @@ int main(int argc,char **argv)
 	return 0;
 
 errexit:
-	   printf("Usage:\n %s -p <pfile> -o <outletshape> -gw <gagewatershed> [-id <idfile>] [-ddm <ddm>]\n",argv[0]);
+	   printf("Usage:\n %s -p <pfile> -o <outletshape> -gw <gagewatershed> [-id <idfile>]\n",argv[0]);
 	   printf("<pfile> is the name of the input D8 flow direction grid file.\n");
 	   printf("<outletshape> is the name of the input outlet shapefile.\n");
 	   printf("<gagewatershed> is the output gagewatershed grid file.\n");
-	   printf("<idfile> is optional output text file giving watershed downslope connectivity.\n");
-           printf("<ddm> is the data decomposition method. Either \"row\", \"column\" or \"block\".\n");
+	   printf("<idfile> is optional output text file giving watershed downslope connectivity.\n\n");
        exit(0);
 } 
 

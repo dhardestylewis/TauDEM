@@ -121,7 +121,7 @@ int connectdown(char *pfile, char *wfile, char *ad8file, char *outletdatasrc, ch
 	int wxstart, wystart;  // DGT Why are these declared as int if they are to be used as long
 	wData->localToGlobal(0, 0, wxstart, wystart);  //  DGT here no typecast - but 2 lines down there is typecast - why
 
-	wIO.read((long)wxstart, (long)wystart, (long)ny, (long)nx, wData->getGridPointer(), wData->getGridPointerStride());
+	wIO.read((long)wxstart, (long)wystart, (long)ny, (long)nx, wData->getGridPointer());
 	wData->share();  // fill partition buffers for cross partition lookups
 
 	//load the d8 flow grid into a linear partition
@@ -139,7 +139,7 @@ int connectdown(char *pfile, char *wfile, char *ad8file, char *outletdatasrc, ch
 	int pny = flowData->getny();
 	int pxstart, pystart;
 	flowData->localToGlobal(0, 0, pxstart, pystart);
-	p.read(pxstart, pystart, pny, pnx, flowData->getGridPointer(), flowData->getGridPointerStride());
+	p.read(pxstart, pystart, pny, pnx, flowData->getGridPointer());
 
 	if(!p.compareTiff(wIO)){
 		printf("w and p files not the same size. Exiting \n");
@@ -162,12 +162,16 @@ int connectdown(char *pfile, char *wfile, char *ad8file, char *outletdatasrc, ch
 	int ad8ny = ad8->getny();
 	int ad8xstart, ad8ystart;
 	ad8->localToGlobal(0, 0, ad8xstart, ad8ystart);
-	ad8IO.read(ad8xstart, ad8ystart, ad8ny, ad8nx, ad8->getGridPointer(), ad8->getGridPointerStride());
+	ad8IO.read(ad8xstart, ad8ystart, ad8ny, ad8nx, ad8->getGridPointer());
 
 	if(!ad8IO.compareTiff(wIO)){
 		printf("ad8 and w files not the same size. Exiting \n");
 		MPI_Abort(MCW,4);
 	}
+
+
+
+
 
 	// Parse to find maximum
 	int32_t wmax=0;  // This assumes that the maximum will be positive
@@ -184,7 +188,9 @@ int connectdown(char *pfile, char *wfile, char *ad8file, char *outletdatasrc, ch
 			}			
 	}
 	
-	//total up all the nodes and all the finished nodes
+
+ 
+		//total up all the nodes and all the finished nodes
 	int maxall;
 	MPI_Allreduce(&wmax, &maxall, 1, MPI_LONG, MPI_MAX, MCW);
 	//  Allocate arrays
@@ -744,6 +750,10 @@ int connectdown(char *pfile, char *wfile, char *ad8file, char *outletdatasrc, ch
 	if ( hDSshmoved ==NULL){ 
 		     hDSshmoved = OGR_Dr_CreateDataSource(driver, movedoutletdatasrc, NULL);}
 	else { hDSshmoved =hDSshmoved  ;}
+
+
+
+
 
 
 

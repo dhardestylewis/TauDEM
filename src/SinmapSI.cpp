@@ -283,14 +283,14 @@ int sindexcombined(char *slopefile,  char *scaterrainfile, char *scarminroadfile
 	// here not done as cell size not needed
 	//slpData->savedxdyc(slp);
 
-	slp.read(xstart, ystart, ny, nx, slpData->getGridPointer(), slpData->getGridPointerStride());
+	slp.read(xstart, ystart, ny, nx, slpData->getGridPointer());
 
 	//Create partition and read data from clibration grid file
 	tdpartition *calData;
 	calData = CreateNewPartition(cal.getDatatype(), totalX, totalY, dx, dy, -1);
 	calData->localToGlobal(0, 0, xstart, ystart);
 	calData->savedxdyc(cal);
-	cal.read(xstart, ystart, ny, nx, calData->getGridPointer(), calData->getGridPointerStride());
+	cal.read(xstart, ystart, ny, nx, calData->getGridPointer());
 			
 	ndvter = (short*)cal.getNodata();	
 			
@@ -299,7 +299,7 @@ int sindexcombined(char *slopefile,  char *scaterrainfile, char *scarminroadfile
 	scaData = CreateNewPartition(sca.getDatatype(), totalX, totalY, dx, dy, sca.getNodata());
 	scaData->localToGlobal(0, 0, xstart, ystart);
 	scaData->savedxdyc(sca);
-	sca.read(xstart, ystart, ny, nx, scaData->getGridPointer(), scaData->getGridPointerStride());
+	sca.read(xstart, ystart, ny, nx, scaData->getGridPointer());
 
 	//Create partition and read data from sca min grid file
 	tdpartition *scaMinData = NULL;
@@ -308,7 +308,7 @@ int sindexcombined(char *slopefile,  char *scaterrainfile, char *scarminroadfile
 		scaMinData = CreateNewPartition(sca_min->getDatatype(), totalX, totalY, dx, dy, sca_min->getNodata());
 		scaMinData->localToGlobal(0, 0, xstart, ystart);
 		scaMinData->savedxdyc(*sca_min);
-		sca_min->read(xstart, ystart, ny, nx, scaMinData->getGridPointer(), scaMinData->getGridPointerStride());
+		sca_min->read(xstart, ystart, ny, nx, scaMinData->getGridPointer());
 	}
 	
 	//Create partition and read data from sca max grid file
@@ -318,8 +318,9 @@ int sindexcombined(char *slopefile,  char *scaterrainfile, char *scarminroadfile
 		scaMaxData = CreateNewPartition(sca_max->getDatatype(), totalX, totalY, dx, dy, sca_max->getNodata());
 		scaMaxData->localToGlobal(0, 0, xstart, ystart);
 		scaMaxData->savedxdyc(*sca_max);
-		sca_max->read(xstart, ystart, ny, nx, scaMaxData->getGridPointer(), scaMaxData->getGridPointerStride());
+		sca_max->read(xstart, ystart, ny, nx, scaMaxData->getGridPointer());
 	}
+	
 
 	short cal_cell_value = 0;
 	float slope_cell_value = 0;
@@ -420,10 +421,10 @@ int sindexcombined(char *slopefile,  char *scaterrainfile, char *scarminroadfile
 	//Create and write to the csi TIFF file
 	float aNodata = -1.0f;
 	tiffIO csi(sincombinedfile, FLOAT_TYPE, &aNodata, slp);
-	csi.write(xstart, ystart, ny, nx, csiData->getGridPointer(), csiData->getGridPointerStride());
+	csi.write(xstart, ystart, ny, nx, csiData->getGridPointer());
 	//Create and write to the sat TIFF file
 	tiffIO sat(satfile, FLOAT_TYPE, &aNodata, slp);
-	sat.write(xstart, ystart, ny, nx, satData->getGridPointer(), satData->getGridPointerStride());
+	sat.write(xstart, ystart, ny, nx, satData->getGridPointer());
 
 	double writetime=MPI_Wtime()-end;
 	MPI_Allreduce (&writetime, &temp, 1, MPI_DOUBLE, MPI_SUM, MCW);

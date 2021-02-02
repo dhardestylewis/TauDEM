@@ -47,8 +47,6 @@ email:  dtarb@usu.edu
 #include "commonLib.h"
 #include "tardemlib.h"
 
-DecompType tdpartition::decompType = DECOMP_BLOCK;
-
 int main(int argc,char **argv)  
 {
    char slopefile[MAXLN],scafile[MAXLN], safile[MAXLN];
@@ -102,24 +100,6 @@ int main(int argc,char **argv)
 				}
 				else goto errexit;
 			}
-                        else if(strcmp(argv[i],"-ddm")==0)
-                        {
-                            i++;
-                            if(argc > i)
-                            {
-                                if(strcmp(argv[i],"row")==0) {
-                                    tdpartition::decompType = DECOMP_ROW;
-                                } else if (strcmp(argv[i],"column")==0) {
-                                    tdpartition::decompType = DECOMP_COLUMN;
-                                } else if (strcmp(argv[i],"block")==0) {
-                                    tdpartition::decompType = DECOMP_BLOCK;
-                                } else {
-                                    goto errexit;
-                                }
-                                i++;
-                            }
-                            else goto errexit;
-                        }
 			else if(strcmp(argv[i],"-par")==0)
 			{
 				i++;
@@ -142,14 +122,13 @@ int main(int argc,char **argv)
 errexit:
    printf("Simple Use:\n %s <basefilename>\n",argv[0]);
    printf("Use with specific file names:\n %s -slp <slopefile>\n",argv[0]);
-   printf("-sca <scafile> -sa <safile> [-par <m> <n>] [-ddm <ddm>]\n");
+   printf("-sca <scafile> -sa <safile> [-par <m> <n>] \n");
    printf("<basefilename> is the name of the base digital elevation model without suffixes for simple input. Suffixes 'slp', 'sca' and 'sa' will be appended. \n");
    printf("<slopefile> is the name of the input slope file.\n");
    printf("<scafile> is the name of input contributing area file.\n");
    printf("<safile> is the name of the output file with the result slope^m x (contributing area)^n.\n");
    printf("<m> is the exponent on slope, default value 2 if not specified.\n");
    printf("<n> is the exponent on contributing area, default value 1 if not specified.\n");
-   printf("<ddm> is the data decomposition method. Either \"row\", \"column\" or \"block\".\n");
    return 0; 
 } 
    

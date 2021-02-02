@@ -23,7 +23,8 @@ endif()
 add_executable(aread8 aread8mn.cpp aread8.cpp ${COMMON_SRC})
 add_executable(areadinf areadinfmn.cpp areadinf.cpp ${COMMON_SRC})
 
-add_executable(d8flowdir D8FlowDirmn.cpp d8.cpp ${COMMON_SRC})
+add_executable(d8flowdir D8FlowDirmn.cpp d8.cpp flow_direction.cpp ${COMMON_SRC})
+add_executable(d8flowdir2 D8FlowDirmn.cpp d82.cpp ${COMMON_SRC})
 add_executable(d8flowpathextremeup D8flowpathextremeup.cpp D8FlowPathExtremeUpmn.cpp ${COMMON_SRC})
 add_executable(d8hdisttostrm D8HDistToStrm.cpp D8HDistToStrmmn.cpp ${COMMON_SRC})
 
@@ -49,8 +50,9 @@ add_executable(slopearearatio SlopeAreaRatio.cpp SlopeAreaRatiomn.cpp ${COMMON_S
 add_executable(slopeavedown SlopeAveDown.cpp SlopeAveDownmn.cpp ${COMMON_SRC})
 add_executable(streamnet streamnetmn.cpp streamnet.cpp ${COMMON_SRC})
 add_executable(threshold Threshold.cpp Thresholdmn.cpp ${COMMON_SRC})
-
-add_executable(gagewatershed gagewatershedmn.cpp gagewatershed.cpp ${COMMON_SRC})
+#add_executable (ReadTif ReadTif.cpp ReadTifmn.cpp ${COMMON_SRC})
+#add_executable (compare ${OBJFILES} compare.cpp)
+#add_executable (extract ${OBJFILES} extract.cpp)
 
 install(TARGETS aread8 
                 areadinf
@@ -77,6 +79,5 @@ install(TARGETS aread8
                 slopeavedown
                 streamnet
                 threshold
-                gagewatershed
         DESTINATION bin)
 

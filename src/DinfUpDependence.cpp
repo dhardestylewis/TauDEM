@@ -90,14 +90,14 @@ int depgrd(char* angfile, char* dgfile, char* depfile)
 	int xstart, ystart;
 	flowData->localToGlobal(0, 0, xstart, ystart);
 	flowData->savedxdyc(ang);
-	ang.read(xstart, ystart, ny, nx, flowData->getGridPointer(), flowData->getGridPointerStride());
+	ang.read(xstart, ystart, ny, nx, flowData->getGridPointer());
 
 	// Read DG 
 	tdpartition *dgData;	
 	tiffIO dg(dgfile, LONG_TYPE);
 	if(!ang.compareTiff(dg)) return 1;  //And maybe an unhappy error message
 	dgData = CreateNewPartition(dg.getDatatype(), totalX, totalY, dxA, dyA, dg.getNodata());
-	dg.read(xstart, ystart, dgData->getny(), dgData->getnx(), dgData->getGridPointer(), dgData->getGridPointerStride());
+	dg.read(xstart, ystart, dgData->getny(), dgData->getnx(), dgData->getGridPointer());
 	
 	//Begin timer
 	double readt = MPI_Wtime();	
@@ -241,7 +241,7 @@ int depgrd(char* angfile, char* dgfile, char* depfile)
 
 	//Create and write TIFF file
 	tiffIO ddep(depfile, FLOAT_TYPE, &depNodata, ang);
-	ddep.write(xstart, ystart, ny, nx, dep->getGridPointer(), dep->getGridPointerStride());
+	ddep.write(xstart, ystart, ny, nx, dep->getGridPointer());
 
 	double writet = MPI_Wtime();
         double dataRead, compute, write, total,tempd;

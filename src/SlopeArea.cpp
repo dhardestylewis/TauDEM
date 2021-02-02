@@ -88,7 +88,7 @@ int slopearea(char *slopefile, char*scafile, char *safile, float *p)
 	tiffIO sca(scafile, FLOAT_TYPE);
 	if(!slp.compareTiff(sca)) return 1;  //And maybe an unhappy error message
 	scaData = CreateNewPartition(sca.getDatatype(), totalX, totalY, dxA, dyA, sca.getNodata());
-	sca.read(xstart, ystart, scaData->getny(), scaData->getnx(), scaData->getGridPointer(), scaData->getGridPointerStride());
+	sca.read(xstart, ystart, scaData->getny(), scaData->getnx(), scaData->getGridPointer());
 	
 	//Begin timer
 	begin = MPI_Wtime();
@@ -143,7 +143,7 @@ int slopearea(char *slopefile, char*scafile, char *safile, float *p)
 	//Create and write TIFF file
 	float aNodata = -1.0f;
 	tiffIO saa(safile, FLOAT_TYPE, &aNodata, slp);
-	saa.write(xstart, ystart, ny, nx, sa->getGridPointer(), sa->getGridPointerStride());
+	saa.write(xstart, ystart, ny, nx, sa->getGridPointer());
 
 	//Brackets force MPI-dependent objects to go out of scope before Finalize is called
 	}MPI_Finalize();
